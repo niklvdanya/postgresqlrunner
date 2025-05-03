@@ -1,0 +1,54 @@
+.qtype_postgresqlrunner .postgresqlrunner {
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    background-color: #f8f9fa;
+    color: #333;
+    padding: 0.5rem;
+    border: 1px solid #ced4da;
+}
+
+.qtype_postgresqlrunner .correct {
+    color: #28a745;
+    font-weight: bold;
+    margin-bottom: 1rem;
+}
+
+.qtype_postgresqlrunner .incorrect {
+    color: #dc3545;
+    font-weight: bold;
+    margin-bottom: 1rem;
+}
+
+.qtype_postgresqlrunner .sql-error {
+    background-color: #f8d7da;
+    color: #721c24;
+    padding: 0.75rem;
+    border: 1px solid #f5c6cb;
+    border-radius: 0.25rem;
+    margin-top: 1rem;
+}
+
+.qtype_postgresqlrunner .result-comparison {
+    margin-top: 1.5rem;
+}
+
+.qtype_postgresqlrunner .sql-result-table {
+    width: 100%;
+    margin-bottom: 1rem;
+    border-collapse: collapse;
+}
+
+.qtype_postgresqlrunner .sql-result-table th,
+.qtype_postgresqlrunner .sql-result-table td {
+    padding: 0.5rem;
+    text-align: left;
+    border: 1px solid #dee2e6;
+}
+
+.qtype_postgresqlrunner .sql-result-table th {
+    background-color: #e9ecef;
+    font-weight: bold;
+}
+
+.qtype_postgresqlrunner .sql-result-table tr:nth-child(even) {
+    background-color: #f2f2f2;
+}

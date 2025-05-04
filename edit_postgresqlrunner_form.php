@@ -115,4 +115,54 @@ class qtype_postgresqlrunner_edit_form extends question_edit_form {
         json_decode($string);
         return (json_last_error() == JSON_ERROR_NONE);
     }
+
+    public function cleanup_resources() {
+        global $USER, $DB;
+        
+        $user_id = isset($USER->id) ? $USER->id : 0;
+        $question_id = $this->id;
+        
+        if (!isset($this->conn) || pg_connection_status($this->conn) !== PGSQL_CONNECTION_OK) {
+            try {
+                $decrypted_connection = '';
+                if (strlen($this->db_connection) > 100) {
+                    $decrypted_connection = \qtype_postgresqlrunner\security\connection_manager::decrypt_connection_string($this->db_connection);
+                    if (!empty($decrypted_connection)) {
+                        $this->db_connection = $decrypted_connection;
+                    }
+                }
+                
+                $this->conn = \qtype_postgresqlrunner\security\connection_manager::get_connection($this->db_connection);
+            } catch (Exception $e) {
+                return;
+            }
+        }
+        
+
+        try {
+            \qtype_postgresqlrunner\security\connection_manager::cleanup_resources($this->conn, $user_id, $question_id);
+        } catch (Exception $e) {
+            error_log('Ошибка при очистке ресурсов PostgreSQL: ' . $e->getMessage());
+        }
+        
+        if (isset($this->conn) && pg_connection_status($this->conn) === PGSQL_CONNECTION_OK) {
+            pg_close($this->conn);
+            $this->conn = null;
+        }
+
+        $log_entry = (object) [
+            'userid' => $user_id,
+            'questionid' => $question_id,
+            'action' => 'cleanup',
+            'timestamp' => time()
+        ];
+        
+        $table_exists = $DB->get_manager()->table_exists('qtype_postgresqlrunner_log');
+        if ($table_exists) {
+            try {
+                $DB->insert_record('qtype_postgresqlrunner_log', $log_entry);
+            } catch (Exception $e) {
+            }
+        }
+    }
 }

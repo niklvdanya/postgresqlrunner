@@ -6,7 +6,7 @@ defined('MOODLE_INTERNAL') || die();
 class connection_manager {
     
     public static function get_connection($db_connection) {
-        global $CFG;
+        global $CFG, $USER;
         
         $conn_details = json_decode($db_connection, true);
         if (!$conn_details || !is_array($conn_details)) {
@@ -37,9 +37,12 @@ class connection_manager {
         
         $salt = isset($CFG->passwordsaltmain) ? $CFG->passwordsaltmain : '';
         $session_id = session_id();
-        $unique_id = uniqid('', true);
-        $unique_role_name = 'student_role_' . substr(md5($session_id . $salt . $unique_id), 0, 16);
-        $unique_role_password = bin2hex(random_bytes(24));
+        $user_id = isset($USER->id) ? $USER->id : 0;
+        $question_id = optional_param('questionid', 0, PARAM_INT);
+        
+        $unique_role_name = 'student_' . $user_id . '_q' . $question_id . '_' . 
+                            substr(md5($session_id . $salt), 0, 8);
+        $unique_role_password = bin2hex(random_bytes(16));
         
         $connection_params = array(
             'host' => $dbhost,
@@ -60,12 +63,12 @@ class connection_manager {
         pg_query($conn, "SET search_path TO public");
         pg_query($conn, "SET client_min_messages TO warning");
         
-        self::setup_restricted_role($conn, $unique_role_name, $unique_role_password, $dbname);
+        self::setup_isolated_role($conn, $unique_role_name, $unique_role_password, $dbname, $user_id, $question_id);
         
         return $conn;
     }
     
-    private static function setup_restricted_role($conn, $role_name, $role_password, $dbname) {
+    private static function setup_isolated_role($conn, $role_name, $role_password, $dbname, $user_id, $question_id) {
         $role_exists = false;
         $safe_role_name = self::sanitize_connection_param($role_name);
         
@@ -83,47 +86,86 @@ class connection_manager {
             $escaped_role_name = pg_escape_identifier($conn, $safe_role_name);
             $escaped_password = pg_escape_literal($conn, $role_password);
             
-            $create_query = "CREATE ROLE " . $escaped_role_name . 
-                           " WITH LOGIN PASSWORD " . $escaped_password . 
-                           " CONNECTION LIMIT 3";
-                           
-            $result = pg_query($conn, $create_query);
+            pg_query($conn, "BEGIN");
             
-            if (!$result) {
-                throw new \Exception('Не удалось создать временную роль для выполнения запросов');
-            }
-            pg_free_result($result);
-            
-            $alter_validity = "ALTER ROLE " . $escaped_role_name . " VALID UNTIL " . 
-                              pg_escape_literal($conn, date('Y-m-d H:i:s', time() + 900)); 
-            
-            $result = pg_query($conn, $alter_validity);
-            if (!$result) {
-                pg_query($conn, "COMMENT ON ROLE " . $escaped_role_name . 
-                        " IS 'Временная роль для учебных заданий'");
-            } else {
+            try {
+                $create_query = "CREATE ROLE " . $escaped_role_name . 
+                               " WITH LOGIN PASSWORD " . $escaped_password . 
+                               " CONNECTION LIMIT 3";
+                               
+                $result = pg_query($conn, $create_query);
+                
+                if (!$result) {
+                    throw new \Exception('Не удалось создать временную роль для выполнения запросов');
+                }
                 pg_free_result($result);
+                
+                $alter_validity = "ALTER ROLE " . $escaped_role_name . " VALID UNTIL " . 
+                                  pg_escape_literal($conn, date('Y-m-d H:i:s', time() + 1800));
+                
+                $result = pg_query($conn, $alter_validity);
+                if (!$result) {
+                    pg_query($conn, "COMMENT ON ROLE " . $escaped_role_name . 
+                            " IS 'Временная роль для учебных заданий, создана " . date('Y-m-d H:i:s') . "'");
+                } else {
+                    pg_free_result($result);
+                }
+                
+                $schema_name = 'student_' . $user_id . '_q' . $question_id;
+                $escaped_schema = pg_escape_identifier($conn, $schema_name);
+                
+                $schema_exists = false;
+                $schema_check = pg_query_params($conn, 
+                    "SELECT 1 FROM information_schema.schemata WHERE schema_name = $1", 
+                    array($schema_name)
+                );
+                
+                if ($schema_check && pg_num_rows($schema_check) > 0) {
+                    $schema_exists = true;
+                }
+                
+                if ($schema_check) {
+                    pg_free_result($schema_check);
+                }
+                
+                if (!$schema_exists) {
+                    $create_schema = "CREATE SCHEMA " . $escaped_schema;
+                    pg_query($conn, $create_schema);
+                }
+                
+                $escaped_dbname = pg_escape_identifier($conn, $dbname);
+                
+                $grant_connect = "GRANT CONNECT ON DATABASE " . $escaped_dbname . " TO " . $escaped_role_name;
+                pg_query($conn, $grant_connect);
+                
+                $grant_usage_public = "GRANT USAGE ON SCHEMA public TO " . $escaped_role_name;
+                pg_query($conn, $grant_usage_public);
+                
+                $grant_public = "GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO " . $escaped_role_name;
+                pg_query($conn, $grant_public);
+                
+                $grant_create = "GRANT CREATE ON SCHEMA public TO " . $escaped_role_name;
+                pg_query($conn, $grant_create);
+                
+                $grant_usage_schema = "GRANT ALL ON SCHEMA " . $escaped_schema . " TO " . $escaped_role_name;
+                pg_query($conn, $grant_usage_schema);
+                
+                $set_search_path = "ALTER ROLE " . $escaped_role_name . " SET search_path = " . 
+                                  $escaped_schema . ", public";
+                pg_query($conn, $set_search_path);
+                
+                $revoke_info_schema = "REVOKE ALL ON SCHEMA information_schema FROM " . $escaped_role_name;
+                pg_query($conn, $revoke_info_schema);
+                
+                $revoke_pg_catalog = "REVOKE ALL ON SCHEMA pg_catalog FROM " . $escaped_role_name;
+                pg_query($conn, $revoke_pg_catalog);
+                
+                pg_query($conn, "COMMIT");
+                
+            } catch (\Exception $e) {
+                pg_query($conn, "ROLLBACK");
+                throw $e;
             }
-            
-            $safe_dbname = pg_escape_identifier($conn, $dbname);
-            
-            $grant_connect = "GRANT CONNECT ON DATABASE " . $safe_dbname . " TO " . $escaped_role_name;
-            pg_query($conn, $grant_connect);
-            
-            $grant_usage = "GRANT USAGE ON SCHEMA public TO " . $escaped_role_name;
-            pg_query($conn, $grant_usage);
-            
-            $grant_select = "GRANT SELECT ON ALL TABLES IN SCHEMA public TO " . $escaped_role_name;
-            pg_query($conn, $grant_select);
-            
-            $revoke_info_schema = "REVOKE ALL ON SCHEMA information_schema FROM " . $escaped_role_name;
-            pg_query($conn, $revoke_info_schema);
-            
-            $revoke_pg_catalog = "REVOKE ALL ON SCHEMA pg_catalog FROM " . $escaped_role_name;
-            pg_query($conn, $revoke_pg_catalog);
-            
-            $restrict_query = "ALTER ROLE " . $escaped_role_name . " SET search_path = public";
-            pg_query($conn, $restrict_query);
         }
     
         $set_role_query = "SET ROLE " . pg_escape_identifier($conn, $safe_role_name);
@@ -134,12 +176,27 @@ class connection_manager {
         pg_free_result($result);
     }
     
-    private static function execute_params($conn, $query, $params) {
-        $result = @pg_query_params($conn, $query, $params);
-        if ($result) {
-            pg_free_result($result);
+    public static function cleanup_resources($conn, $user_id, $question_id) {
+        pg_query($conn, "RESET ROLE");
+        
+        $role_pattern = 'student_' . $user_id . '_q' . $question_id . '_%';
+        $role_result = pg_query_params($conn, 
+            "SELECT rolname FROM pg_roles WHERE rolname LIKE $1", 
+            array($role_pattern)
+        );
+        
+        if ($role_result) {
+            while ($row = pg_fetch_assoc($role_result)) {
+                $role_name = $row['rolname'];
+                $drop_role = "DROP ROLE IF EXISTS " . pg_escape_identifier($conn, $role_name);
+                pg_query($conn, $drop_role);
+            }
+            pg_free_result($role_result);
         }
-        return $result;
+        
+        $schema_name = 'student_' . $user_id . '_q' . $question_id;
+        $drop_schema = "DROP SCHEMA IF EXISTS " . pg_escape_identifier($conn, $schema_name) . " CASCADE";
+        pg_query($conn, $drop_schema);
     }
     
     private static function build_connection_string($params) {

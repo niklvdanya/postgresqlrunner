@@ -43,7 +43,11 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
         }
 
         $result = html_writer::tag('div', $questiontext, array('class' => 'qtext'));
-
+        if ($qa->get_state() == question_state::$finished) {
+            if (method_exists($question, 'cleanup_resources')) {
+                $question->cleanup_resources();
+            }
+        }
         if (!$placeholder) {
             $result .= html_writer::start_tag('div', array('class' => 'ablock'));
             $result .= html_writer::tag('textarea', s($currentanswer), $inputattributes);
@@ -306,6 +310,21 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
         $output .= html_writer::end_tag('div');
         
         return $output;
+    }
+
+    public function after_question(question_attempt $qa, question_display_options $options) {
+        $question = $qa->get_question();
+        
+        if ($qa->get_state() instanceof question_state_finished ||
+            optional_param('next', false, PARAM_BOOL) || 
+            optional_param('finish', false, PARAM_BOOL)) {
+            
+            if (method_exists($question, 'cleanup_resources')) {
+                $question->cleanup_resources();
+            }
+        }
+        
+        return '';
     }
 
     public function correct_response(question_attempt $qa) {

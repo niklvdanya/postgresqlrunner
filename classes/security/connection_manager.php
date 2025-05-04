@@ -42,7 +42,7 @@ class connection_manager {
             $dbpass
         );
         
-        $conn = pg_connect($conn_string);
+        $conn = @pg_connect($conn_string);
         
         if (!$conn) {
             throw new \Exception('Не удалось подключиться к базе данных PostgreSQL');
@@ -50,6 +50,36 @@ class connection_manager {
         
         pg_query($conn, "SET statement_timeout TO 5000");
         pg_query($conn, "SET search_path TO public");
+        pg_query($conn, "SET client_min_messages TO warning");
+        
+        $role_exists = false;
+        $role_check_result = pg_query($conn, "SELECT 1 FROM pg_roles WHERE rolname = 'student_role'");
+        if ($role_check_result && pg_num_rows($role_check_result) > 0) {
+            $role_exists = true;
+            pg_free_result($role_check_result);
+        }
+
+        if (!$role_exists) {
+            $create_result = @pg_query($conn, "CREATE ROLE student_role WITH LOGIN PASSWORD 'secure_password_123'");
+            if ($create_result) {
+                pg_free_result($create_result);
+                @pg_query($conn, "GRANT CONNECT ON DATABASE " . pg_escape_identifier($conn, $dbname) . " TO student_role");
+                @pg_query($conn, "GRANT USAGE ON SCHEMA public TO student_role");
+                @pg_query($conn, "GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO student_role");
+                @pg_query($conn, "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE ON TABLES TO student_role");
+                @pg_query($conn, "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, USAGE ON SEQUENCES TO student_role");
+
+                $role_check_result = pg_query($conn, "SELECT 1 FROM pg_roles WHERE rolname = 'student_role'");
+                if ($role_check_result && pg_num_rows($role_check_result) > 0) {
+                    $role_exists = true;
+                    pg_free_result($role_check_result);
+                }
+            }
+        }
+
+        if ($role_exists) {
+            @pg_query($conn, "SET role student_role");
+        }
         
         return $conn;
     }
@@ -63,7 +93,9 @@ class connection_manager {
     }
     
     public static function safe_execute_query($conn, $query) {
-        \qtype_postgresqlrunner\security\blacklist::validate_sql($query);
+        if (!\qtype_postgresqlrunner\security\blacklist::is_internal_query_allowed($query)) {
+            \qtype_postgresqlrunner\security\blacklist::validate_sql($query);
+        }
         
         $query = self::sanitize_query($query);
         $result = pg_query($conn, $query);
@@ -76,7 +108,9 @@ class connection_manager {
     }
     
     public static function execute_parametrized_query($conn, $query, $params) {
-        \qtype_postgresqlrunner\security\blacklist::validate_sql($query);
+        if (!\qtype_postgresqlrunner\security\blacklist::is_internal_query_allowed($query)) {
+            \qtype_postgresqlrunner\security\blacklist::validate_sql($query);
+        }
         
         $query = self::sanitize_query($query);
         $result = pg_query_params($conn, $query, $params);
@@ -89,6 +123,19 @@ class connection_manager {
     }
     
     public static function obfuscate_connection_details($db_connection) {
+        $conn_details = json_decode($db_connection, true);
+        if (!$conn_details || !is_array($conn_details)) {
+            return json_encode(['error' => 'Invalid connection details']);
+        }
+        
+        if (isset($conn_details['password'])) {
+            $conn_details['password'] = '********';
+        }
+        
+        return json_encode($conn_details);
+    }
+    
+    public static function get_secure_display_connection($db_connection) {
         $conn_details = json_decode($db_connection, true);
         if (!$conn_details || !is_array($conn_details)) {
             return json_encode(['error' => 'Invalid connection details']);

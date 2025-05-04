@@ -134,4 +134,10 @@ class qtype_postgresqlrunner extends question_type {
 
         return $output;
     }
+    
+    public function display_question_settings_form($question, $context) {
+        global $PAGE;
+        $PAGE->requires->js_call_amd('qtype_postgresqlrunner/admin', 'init', array());
+        parent::display_question_settings_form($question, $context);
+    }
 }

@@ -85,7 +85,7 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
                         $feedback .= html_writer::tag('h4', get_string('yourresult', 'qtype_postgresqlrunner'));
                         $feedback .= $this->render_result_table($result);
                     } catch (Exception $e) {
-                        $feedback .= html_writer::tag('div', s($e->getMessage()), array('class' => 'sql-error'));
+                        $feedback .= html_writer::tag('div', s($this->sanitize_error_message($e->getMessage())), array('class' => 'sql-error'));
                     }
                 }
             } else {
@@ -109,8 +109,8 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
                     } else {
                         $student_error = $question->get_student_query_error();
                         if ($student_error) {
-                            $feedback .= html_writer::tag('div', get_string('queryerror', 'qtype_postgresqlrunner') . ': ' . s($student_error), 
-                                                       array('class' => 'sql-error'));
+                            $feedback .= html_writer::tag('div', get_string('queryerror', 'qtype_postgresqlrunner') . ': ' 
+                                . s($this->sanitize_error_message($student_error)), array('class' => 'sql-error'));
                         } else {
                             $state_difference = $question->get_state_difference();
                             if ($state_difference) {
@@ -134,7 +134,7 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
                         }
                     }
                 } catch (Exception $e) {
-                    $feedback .= html_writer::tag('div', s($e->getMessage()), array('class' => 'sql-error'));
+                    $feedback .= html_writer::tag('div', s($this->sanitize_error_message($e->getMessage())), array('class' => 'sql-error'));
                 }
             }
             
@@ -142,6 +142,18 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
         }
         
         return '';
+    }
+
+    protected function sanitize_error_message($message) {
+        $sensitive_terms = ['password', 'user', 'login', 'authenticate', 'connection', 'host'];
+        
+        foreach ($sensitive_terms as $term) {
+            if (stripos($message, $term) !== false) {
+                return 'Ошибка SQL-запроса. Пожалуйста, проверьте синтаксис.';
+            }
+        }
+        
+        return $message;
     }
 
     protected function determine_query_type($query) {

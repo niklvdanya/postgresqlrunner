@@ -33,7 +33,7 @@ class blacklist {
         
         foreach (self::$forbidden_commands as $command) {
             $normalized_command = strtoupper(trim($command));
-            if (strpos($normalized_sql, $normalized_command) !== false) {
+            if (self::contains_forbidden_command($normalized_sql, $normalized_command)) {
                 throw new \Exception('Запрещенная команда: ' . $command);
             }
         }
@@ -55,9 +55,16 @@ class blacklist {
     private static function normalize_sql($sql) {
         $sql = preg_replace('/\s+/', ' ', trim($sql));
         $sql = preg_replace('/\/\*.*?\*\//', '', $sql);
-        $sql = preg_replace('/--.*?$/', '', $sql);
+        $sql = preg_replace('/--.*?(\r|\n|$)/', '', $sql);
+        $sql = preg_replace('/\/\*.*$/s', '', $sql);
+        $sql = preg_replace('/^.*\*\//s', '', $sql);
         $sql = strtoupper($sql);
         return $sql;
+    }
+    
+    private static function contains_forbidden_command($sql, $command) {
+        $tokens = preg_split('/[\s\,\(\)\;\"\'\`]/', $sql);
+        return in_array($command, $tokens) || strpos($sql, $command . '(') !== false || strpos($sql, $command . ' ') !== false;
     }
     
     private static function is_student_allowed_query($sql) {
@@ -68,6 +75,27 @@ class blacklist {
         
         foreach ($allowed_prefixes as $prefix) {
             if (strpos($sql, $prefix) === 0) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    public static function is_internal_query_allowed($sql) {
+        $whitelist = [
+            'SELECT table_name FROM information_schema.tables WHERE table_schema = \'public\'',
+            'SELECT column_name, data_type, character_maximum_length, is_nullable, column_default, ordinal_position FROM information_schema.columns WHERE table_name = $1 ORDER BY ordinal_position',
+            'SELECT tc.constraint_name, tc.constraint_type, string_agg(kcu.column_name, \',\') as columns FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name AND tc.table_name = kcu.table_name WHERE tc.table_name = $1 GROUP BY tc.constraint_name, tc.constraint_type'
+        ];
+        
+        $normalized_sql = preg_replace('/\s+/', ' ', trim($sql));
+        $normalized_sql = strtoupper($normalized_sql);
+        
+        foreach ($whitelist as $allowed_query) {
+            $normalized_allowed = preg_replace('/\s+/', ' ', trim($allowed_query));
+            $normalized_allowed = strtoupper($normalized_allowed);
+            if ($normalized_sql === $normalized_allowed) {
                 return true;
             }
         }

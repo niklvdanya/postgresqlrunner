@@ -1,0 +1,15 @@
+CREATE ROLE student_role WITH LOGIN PASSWORD 'secure_password';
+REVOKE ALL ON DATABASE postgres FROM PUBLIC;
+REVOKE ALL ON DATABASE postgres FROM student_role;
+GRANT CONNECT ON DATABASE postgres TO student_role;
+GRANT USAGE ON SCHEMA public TO student_role;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO student_role;
+GRANT INSERT ON ALL TABLES IN SCHEMA public TO student_role;
+GRANT UPDATE ON ALL TABLES IN SCHEMA public TO student_role;
+REVOKE ALL ON information_schema.tables FROM student_role;
+REVOKE ALL ON pg_catalog.pg_tables FROM student_role;
+REVOKE ALL ON pg_catalog.pg_roles FROM student_role;
+REVOKE ALL ON pg_catalog.pg_user FROM student_role;
+REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA pg_catalog FROM student_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE ON TABLES TO student_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, USAGE ON SEQUENCES TO student_role;

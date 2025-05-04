@@ -1,28 +1,43 @@
-define(['jquery', 'core/notification'], function($, Notification) {
+define(['jquery'], function($) {
     
-    const init = function(inputId) {
-        const textarea = $('#' + inputId);
+    const maskPassword = function() {
+        const connectionField = $('#id_db_connection');
         
-        if (textarea.length === 0) {
+        if (connectionField.length === 0) {
             return;
         }
         
-        textarea.on('keydown', function(e) {
-            if (e.keyCode === 9) {
-                e.preventDefault();
-                
-                const start = this.selectionStart;
-                const end = this.selectionEnd;
-                
-                const value = $(this).val();
-                $(this).val(value.substring(0, start) + '    ' + value.substring(end));
-                
-                this.selectionStart = this.selectionEnd = start + 4;
+        connectionField.on('change', function() {
+            try {
+                const connData = JSON.parse($(this).val());
+                if (connData && connData.password) {
+                    connData.password = '********';
+                    $(this).data('original-password', connData.password);
+                    $(this).val(JSON.stringify(connData, null, 2));
+                }
+            } catch (e) {
+                // Invalid JSON, do nothing
             }
         });
+        
+        connectionField.on('focus', function() {
+            try {
+                const connData = JSON.parse($(this).val());
+                if (connData && connData.password === '********' && $(this).data('original-password')) {
+                    connData.password = $(this).data('original-password');
+                    $(this).val(JSON.stringify(connData, null, 2));
+                }
+            } catch (e) {
+                // Invalid JSON, do nothing
+            }
+        });
+        
+        connectionField.trigger('change');
     };
     
     return {
-        init: init
+        init: function() {
+            maskPassword();
+        }
     };
 });

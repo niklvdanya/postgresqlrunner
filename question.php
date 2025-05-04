@@ -12,6 +12,14 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
     public $grading_type;
     public $case_sensitive;
     public $allow_ordering_difference;
+    
+    protected $conn;
+    protected $temp_prefix;
+    protected $state_difference;
+    protected $model_table_state;
+    protected $student_table_state;
+    protected $student_query_error;
+    protected $model_query_error;
 
     public function get_expected_data() {
         return array('answer' => PARAM_RAW);
@@ -45,27 +53,51 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
         $grade = $this->check_sql_answer($response['answer']);
         return array($grade, question_state::graded_state_for_fraction($grade));
     }
+    
+    public function get_correct_response() {
+        return array('answer' => $this->sqlcode);
+    }
 
     public function check_sql_answer($answer) {
         if (empty($answer)) {
             return 0;
         }
-
+        
         try {
-            $result = $this->execute_sql_query($answer);
-            $expected = json_decode($this->expected_result, true);
+            $query_type = $this->determine_query_type($answer);
+            $this->setup_test_environment();
             
-            if ($this->compare_results($result, $expected)) {
-                return 1.0;
+            if ($query_type === 'SELECT') {
+                $grade = $this->check_select_query($answer);
             } else {
-                return 0.0;
+                $grade = $this->check_state_changing_query($answer);
             }
+            
+            if (isset($this->conn) && is_resource($this->conn)) {
+                $this->cleanup_test_environment();
+            }
+            
+            return $grade;
         } catch (Exception $e) {
+            if (isset($this->conn) && is_resource($this->conn)) {
+                $this->cleanup_test_environment();
+            }
             return 0.0;
         }
     }
 
-    public function execute_sql_query($sql) {
+    protected function determine_query_type($query) {
+        $query = trim($query);
+        $first_word = strtoupper(explode(' ', $query)[0]);
+        
+        if (strpos($first_word, 'SELECT') === 0) {
+            return 'SELECT';
+        } else {
+            return 'STATE_CHANGING';
+        }
+    }
+
+    protected function setup_test_environment() {
         $conn_details = json_decode($this->db_connection, true);
         
         $dbhost = $conn_details['host'];
@@ -75,51 +107,385 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
         $dbport = isset($conn_details['port']) ? $conn_details['port'] : 5432;
         
         $conn_string = "host=$dbhost port=$dbport dbname=$dbname user=$dbuser password=$dbpass";
-        $conn = pg_connect($conn_string);
+        $this->conn = pg_connect($conn_string);
         
-        if (!$conn) {
+        if (!$this->conn) {
             throw new Exception('Не удалось подключиться к базе данных PostgreSQL');
         }
         
-        $result = pg_query($conn, $sql);
-        
-        if (!$result) {
-            pg_close($conn);
-            throw new Exception('Ошибка выполнения SQL-запроса: ' . pg_last_error($conn));
-        }
-        
-        $data = array();
-        $num_fields = pg_num_fields($result);
-        $fields = array();
-        
-        for ($i = 0; $i < $num_fields; $i++) {
-            $fields[] = pg_field_name($result, $i);
-        }
-        
-        while ($row = pg_fetch_assoc($result)) {
-            $data[] = $row;
-        }
-        
-        pg_close($conn);
-        
-        return array(
-            'fields' => $fields,
-            'data' => $data
-        );
-    }
-    
-    public function get_sql_result($sql) {
-        return $this->execute_sql_query($sql);
+        $this->temp_prefix = 'temp_' . uniqid();
+        pg_query($this->conn, 'BEGIN');
     }
 
-    protected function compare_results($actual, $expected) {
+    protected function cleanup_test_environment() {
+        if (isset($this->conn) && is_resource($this->conn)) {
+            pg_query($this->conn, 'ROLLBACK');
+            pg_close($this->conn);
+            $this->conn = null;
+        }
+    }
+
+    public function execute_sql_query($sql) {
+        if (isset($this->conn) && is_resource($this->conn)) {
+            $result = pg_query($this->conn, $sql);
+            
+            if (!$result) {
+                throw new Exception('Ошибка выполнения SQL-запроса: ' . pg_last_error($this->conn));
+            }
+            
+            $data = array();
+            $fields = array();
+            
+            if (pg_num_fields($result) > 0) {
+                $num_fields = pg_num_fields($result);
+                
+                for ($i = 0; $i < $num_fields; $i++) {
+                    $fields[] = pg_field_name($result, $i);
+                }
+                
+                while ($row = pg_fetch_assoc($result)) {
+                    $data[] = $row;
+                }
+            }
+            
+            return array(
+                'fields' => $fields,
+                'data' => $data
+            );
+        } else {
+            $conn_details = json_decode($this->db_connection, true);
+            
+            $dbhost = $conn_details['host'];
+            $dbname = $conn_details['dbname'];
+            $dbuser = $conn_details['user'];
+            $dbpass = $conn_details['password'];
+            $dbport = isset($conn_details['port']) ? $conn_details['port'] : 5432;
+            
+            $conn_string = "host=$dbhost port=$dbport dbname=$dbname user=$dbuser password=$dbpass";
+            $conn = pg_connect($conn_string);
+            
+            if (!$conn) {
+                throw new Exception('Не удалось подключиться к базе данных PostgreSQL');
+            }
+            
+            $result = pg_query($conn, $sql);
+            
+            if (!$result) {
+                $error = pg_last_error($conn);
+                pg_close($conn);
+                throw new Exception('Ошибка выполнения SQL-запроса: ' . $error);
+            }
+            
+            $data = array();
+            $fields = array();
+            
+            if (pg_num_fields($result) > 0) {
+                $num_fields = pg_num_fields($result);
+                
+                for ($i = 0; $i < $num_fields; $i++) {
+                    $fields[] = pg_field_name($result, $i);
+                }
+                
+                while ($row = pg_fetch_assoc($result)) {
+                    $data[] = $row;
+                }
+            }
+            
+            pg_close($conn);
+            
+            return array(
+                'fields' => $fields,
+                'data' => $data
+            );
+        }
+    }
+    
+    protected function check_select_query($student_query) {
+        $student_result = $this->execute_sql_query($student_query);
+        $model_result = $this->execute_sql_query($this->sqlcode);
+        
         if ($this->grading_type == 'exact') {
-            return $this->compare_exact($actual, $expected);
+            return $this->compare_exact($student_result, $model_result) ? 1.0 : 0.0;
         } else if ($this->grading_type == 'partial') {
-            return $this->compare_partial($actual, $expected);
+            return $this->compare_partial($student_result, $model_result) ? 1.0 : 0.0;
         }
         
-        return false;
+        return 0.0;
+    }
+
+    protected function check_state_changing_query($student_query) {
+        $tables_before = $this->get_all_tables();
+        $snapshots_before = [];
+        
+        foreach ($tables_before as $table) {
+            $snapshots_before[$table] = $this->get_table_state($table);
+        }
+        
+        $model_query_result = null;
+        try {
+            $model_query_result = $this->execute_sql_query($this->sqlcode);
+        } catch (Exception $e) {
+            $this->model_query_error = $e->getMessage();
+            return 0.0;
+        }
+        
+        $tables_after_model = $this->get_all_tables();
+        $snapshots_after_model = [];
+        
+        foreach ($tables_after_model as $table) {
+            $snapshots_after_model[$table] = $this->get_table_state($table);
+        }
+        
+        pg_query($this->conn, 'ROLLBACK');
+        pg_query($this->conn, 'BEGIN');
+        
+        foreach ($snapshots_before as $table => $state) {
+            $this->restore_table_state($table, $state);
+        }
+        
+        $student_query_result = null;
+        try {
+            $student_query_result = $this->execute_sql_query($student_query);
+        } catch (Exception $e) {
+            $this->student_query_error = $e->getMessage();
+            return 0.0;
+        }
+        
+        $tables_after_student = $this->get_all_tables();
+        $snapshots_after_student = [];
+        
+        foreach ($tables_after_student as $table) {
+            $snapshots_after_student[$table] = $this->get_table_state($table);
+        }
+        
+        if (count($tables_after_model) != count($tables_after_student)) {
+            $this->state_difference = "Разное количество таблиц";
+            return 0.0;
+        }
+        
+        $all_tables = array_unique(array_merge($tables_after_model, $tables_after_student));
+        
+        foreach ($all_tables as $table) {
+            if (!isset($snapshots_after_model[$table])) {
+                $this->state_difference = "Таблица '{$table}' отсутствует после эталонного запроса";
+                return 0.0;
+            }
+            
+            if (!isset($snapshots_after_student[$table])) {
+                $this->state_difference = "Таблица '{$table}' отсутствует после запроса студента";
+                return 0.0;
+            }
+            
+            if (!$this->compare_table_states($snapshots_after_model[$table], $snapshots_after_student[$table])) {
+                $this->state_difference = "Состояние таблицы '{$table}' отличается";
+                $this->model_table_state = $snapshots_after_model[$table];
+                $this->student_table_state = $snapshots_after_student[$table];
+                return 0.0;
+            }
+        }
+        
+        return 1.0;
+    }
+
+    protected function get_all_tables() {
+        $query = "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'";
+        $result = pg_query($this->conn, $query);
+        
+        if (!$result) {
+            return [];
+        }
+        
+        $tables = [];
+        while ($row = pg_fetch_assoc($result)) {
+            $tables[] = $row['table_name'];
+        }
+        
+        return $tables;
+    }
+
+    protected function get_table_state($table) {
+        $structure_query = "
+            SELECT column_name, data_type, character_maximum_length, 
+                   is_nullable, column_default, ordinal_position
+            FROM information_schema.columns 
+            WHERE table_name = '{$table}'
+            ORDER BY ordinal_position
+        ";
+        
+        $structure_result = pg_query($this->conn, $structure_query);
+        
+        if (!$structure_result) {
+            throw new Exception("Не удалось получить структуру таблицы {$table}");
+        }
+        
+        $structure = [];
+        while ($row = pg_fetch_assoc($structure_result)) {
+            $structure[] = $row;
+        }
+        
+        $constraints_query = "
+            SELECT tc.constraint_name, tc.constraint_type, 
+                   string_agg(kcu.column_name, ',') as columns
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu 
+              ON tc.constraint_name = kcu.constraint_name
+             AND tc.table_name = kcu.table_name
+            WHERE tc.table_name = '{$table}'
+            GROUP BY tc.constraint_name, tc.constraint_type
+        ";
+        
+        $constraints_result = pg_query($this->conn, $constraints_query);
+        
+        $constraints = [];
+        if ($constraints_result) {
+            while ($row = pg_fetch_assoc($constraints_result)) {
+                $constraints[] = $row;
+            }
+        }
+        
+        $data_query = "SELECT * FROM {$table}";
+        $data_result = pg_query($this->conn, $data_query);
+        
+        $data = [];
+        if ($data_result) {
+            while ($row = pg_fetch_assoc($data_result)) {
+                $data[] = $row;
+            }
+        }
+        
+        return [
+            'structure' => $structure,
+            'constraints' => $constraints,
+            'data' => $data
+        ];
+    }
+
+    protected function restore_table_state($table, $state) {
+        if (empty($state['structure'])) {
+            return;
+        }
+        
+        $drop_query = "DROP TABLE IF EXISTS {$table} CASCADE";
+        pg_query($this->conn, $drop_query);
+        
+        $create_query = "CREATE TABLE {$table} (";
+        
+        $columns = [];
+        foreach ($state['structure'] as $column) {
+            $col_def = $column['column_name'] . ' ' . $column['data_type'];
+            
+            if ($column['character_maximum_length']) {
+                $col_def .= '(' . $column['character_maximum_length'] . ')';
+            }
+            
+            if ($column['is_nullable'] === 'NO') {
+                $col_def .= ' NOT NULL';
+            }
+            
+            if ($column['column_default']) {
+                $col_def .= ' DEFAULT ' . $column['column_default'];
+            }
+            
+            $columns[] = $col_def;
+        }
+        
+        $create_query .= implode(', ', $columns) . ')';
+        pg_query($this->conn, $create_query);
+        
+        foreach ($state['constraints'] as $constraint) {
+            if ($constraint['constraint_type'] === 'PRIMARY KEY') {
+                $query = "ALTER TABLE {$table} ADD CONSTRAINT {$constraint['constraint_name']} 
+                          PRIMARY KEY ({$constraint['columns']})";
+                pg_query($this->conn, $query);
+            }
+        }
+        
+        if (!empty($state['data'])) {
+            foreach ($state['data'] as $row) {
+                $columns = array_keys($row);
+                $values = array_map(function($val) {
+                    return "'" . pg_escape_string($this->conn, $val) . "'";
+                }, array_values($row));
+                
+                $insert_query = "INSERT INTO {$table} (" . implode(', ', $columns) . ") 
+                                VALUES (" . implode(', ', $values) . ")";
+                pg_query($this->conn, $insert_query);
+            }
+        }
+    }
+
+    protected function compare_table_states($state1, $state2) {
+        if (count($state1['structure']) !== count($state2['structure'])) {
+            return false;
+        }
+        
+        for ($i = 0; $i < count($state1['structure']); $i++) {
+            if ($state1['structure'][$i]['column_name'] !== $state2['structure'][$i]['column_name'] ||
+                $state1['structure'][$i]['data_type'] !== $state2['structure'][$i]['data_type'] ||
+                $state1['structure'][$i]['is_nullable'] !== $state2['structure'][$i]['is_nullable']) {
+                return false;
+            }
+        }
+        
+        $data1 = $this->sort_table_data($state1['data']);
+        $data2 = $this->sort_table_data($state2['data']);
+        
+        if (count($data1) !== count($data2)) {
+            return false;
+        }
+        
+        for ($i = 0; $i < count($data1); $i++) {
+            if (!$this->compare_rows($data1[$i], $data2[$i])) {
+                return false;
+            }
+        }
+        
+        return true;
+    }
+
+    protected function sort_table_data($data) {
+        if (empty($data)) {
+            return [];
+        }
+        
+        $serialized = [];
+        foreach ($data as $row) {
+            ksort($row);
+            $serialized[] = serialize($row);
+        }
+        
+        sort($serialized);
+        
+        $result = [];
+        foreach ($serialized as $item) {
+            $result[] = unserialize($item);
+        }
+        
+        return $result;
+    }
+
+    protected function compare_rows($row1, $row2) {
+        if (count($row1) !== count($row2)) {
+            return false;
+        }
+        
+        foreach ($row1 as $key => $value) {
+            if (!isset($row2[$key])) {
+                return false;
+            }
+            
+            if ($this->case_sensitive) {
+                if ((string)$value !== (string)$row2[$key]) {
+                    return false;
+                }
+            } else {
+                if (strtolower((string)$value) !== strtolower((string)$row2[$key])) {
+                    return false;
+                }
+            }
+        }
+        
+        return true;
     }
 
     protected function compare_exact($actual, $expected) {
@@ -240,8 +606,71 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
         return true;
     }
 
-    public function get_correct_response() {
-        return array('answer' => $this->sqlcode);
+    public function get_sql_result($sql) {
+        $conn_details = json_decode($this->db_connection, true);
+        
+        $dbhost = $conn_details['host'];
+        $dbname = $conn_details['dbname'];
+        $dbuser = $conn_details['user'];
+        $dbpass = $conn_details['password'];
+        $dbport = isset($conn_details['port']) ? $conn_details['port'] : 5432;
+        
+        $conn_string = "host=$dbhost port=$dbport dbname=$dbname user=$dbuser password=$dbpass";
+        $conn = pg_connect($conn_string);
+        
+        if (!$conn) {
+            throw new Exception('Не удалось подключиться к базе данных PostgreSQL');
+        }
+        
+        $result = pg_query($conn, $sql);
+        
+        if (!$result) {
+            $error = pg_last_error($conn);
+            pg_close($conn);
+            throw new Exception('Ошибка выполнения SQL-запроса: ' . $error);
+        }
+        
+        $data = array();
+        $fields = array();
+        
+        if (pg_num_fields($result) > 0) {
+            $num_fields = pg_num_fields($result);
+            
+            for ($i = 0; $i < $num_fields; $i++) {
+                $fields[] = pg_field_name($result, $i);
+            }
+            
+            while ($row = pg_fetch_assoc($result)) {
+                $data[] = $row;
+            }
+        }
+        
+        pg_close($conn);
+        
+        return array(
+            'fields' => $fields,
+            'data' => $data
+        );
+    }
+
+    public function get_student_table_state() {
+        return isset($this->student_table_state) ? $this->student_table_state : null;
+    }
+
+    public function get_model_table_state() {
+        return isset($this->model_table_state) ? $this->model_table_state : null;
+    }
+
+    public function get_state_difference() {
+        return isset($this->state_difference) ? $this->state_difference : null;
+    }
+
+    public function get_student_query_error() {
+        return isset($this->student_query_error) ? $this->student_query_error : null;
+    }
+
+    public function get_model_query_error() {
+        return isset($this->model_query_error) ? $this->model_query_error : null;
     }
 
     public function check_file_access($qa, $options, $component, $filearea, $args, $forcedownload) {

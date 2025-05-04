@@ -57,7 +57,7 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
         }
 
         $this->page->requires->js_call_amd('qtype_postgresqlrunner/pgrunner', 'init', 
-                                         array($inputname));
+                                          array($inputname));
 
         return $result;
     }
@@ -78,21 +78,60 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
             if ($fraction == 1) {
                 $feedback = html_writer::tag('div', get_string('correctresult', 'qtype_postgresqlrunner'), 
                                            array('class' => 'correct'));
+                
+                if (stripos(trim($currentanswer), 'SELECT') === 0) {
+                    try {
+                        $result = $question->get_sql_result($currentanswer);
+                        $feedback .= html_writer::tag('h4', get_string('yourresult', 'qtype_postgresqlrunner'));
+                        $feedback .= $this->render_result_table($result);
+                    } catch (Exception $e) {
+                    }
+                }
             } else {
                 $feedback = html_writer::tag('div', get_string('incorrectresult', 'qtype_postgresqlrunner'), 
                                            array('class' => 'incorrect'));
                 
                 try {
-                    $user_result = $question->get_sql_result($currentanswer);
-                    $expected = json_decode($question->expected_result, true);
+                    $query_type = $this->determine_query_type($currentanswer);
                     
-                    $feedback .= html_writer::start_tag('div', array('class' => 'result-comparison'));
-                    $feedback .= html_writer::tag('h4', get_string('yourresult', 'qtype_postgresqlrunner'));
-                    $feedback .= $this->render_result_table($user_result);
-                    
-                    $feedback .= html_writer::tag('h4', get_string('expectedresult', 'qtype_postgresqlrunner'));
-                    $feedback .= $this->render_result_table($expected);
-                    $feedback .= html_writer::end_tag('div');
+                    if ($query_type === 'SELECT') {
+                        $student_result = $question->get_sql_result($currentanswer);
+                        $expected_result = $question->get_sql_result($question->sqlcode);
+                        
+                        $feedback .= html_writer::start_tag('div', array('class' => 'result-comparison'));
+                        $feedback .= html_writer::tag('h4', get_string('yourresult', 'qtype_postgresqlrunner'));
+                        $feedback .= $this->render_result_table($student_result);
+                        
+                        $feedback .= html_writer::tag('h4', get_string('expectedresult', 'qtype_postgresqlrunner'));
+                        $feedback .= $this->render_result_table($expected_result);
+                        $feedback .= html_writer::end_tag('div');
+                    } else {
+                        $student_error = $question->get_student_query_error();
+                        if ($student_error) {
+                            $feedback .= html_writer::tag('div', get_string('queryerror', 'qtype_postgresqlrunner') . ': ' . $student_error, 
+                                                       array('class' => 'sql-error'));
+                        } else {
+                            $state_difference = $question->get_state_difference();
+                            if ($state_difference) {
+                                $feedback .= html_writer::tag('div', $state_difference, array('class' => 'sql-error'));
+                                
+                                $student_state = $question->get_student_table_state();
+                                $model_state = $question->get_model_table_state();
+                                
+                                if ($student_state && $model_state) {
+                                    $feedback .= html_writer::start_tag('div', array('class' => 'state-comparison'));
+                                    
+                                    $feedback .= html_writer::tag('h4', get_string('yourtablestate', 'qtype_postgresqlrunner'));
+                                    $feedback .= $this->render_table_state($student_state);
+                                    
+                                    $feedback .= html_writer::tag('h4', get_string('expectedtablestate', 'qtype_postgresqlrunner'));
+                                    $feedback .= $this->render_table_state($model_state);
+                                    
+                                    $feedback .= html_writer::end_tag('div');
+                                }
+                            }
+                        }
+                    }
                 } catch (Exception $e) {
                     $feedback .= html_writer::tag('div', $e->getMessage(), array('class' => 'sql-error'));
                 }
@@ -102,6 +141,17 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
         }
         
         return '';
+    }
+
+    protected function determine_query_type($query) {
+        $query = trim($query);
+        $first_word = strtoupper(explode(' ', $query)[0]);
+        
+        if (strpos($first_word, 'SELECT') === 0) {
+            return 'SELECT';
+        } else {
+            return 'STATE_CHANGING';
+        }
     }
 
     protected function render_result_table($result) {
@@ -139,6 +189,78 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
         
         $output .= html_writer::end_tag('tbody');
         $output .= html_writer::end_tag('table');
+        
+        return $output;
+    }
+
+    protected function render_table_state($state) {
+        $output = '';
+        
+        $output .= html_writer::start_tag('div', array('class' => 'table-structure'));
+        $output .= html_writer::tag('h5', get_string('tablestructure', 'qtype_postgresqlrunner'));
+        
+        $output .= html_writer::start_tag('table', array('class' => 'sql-result-table'));
+        $output .= html_writer::start_tag('thead');
+        $output .= html_writer::start_tag('tr');
+        $output .= html_writer::tag('th', get_string('columnname', 'qtype_postgresqlrunner'));
+        $output .= html_writer::tag('th', get_string('datatype', 'qtype_postgresqlrunner'));
+        $output .= html_writer::tag('th', get_string('nullable', 'qtype_postgresqlrunner'));
+        $output .= html_writer::tag('th', get_string('defaultvalue', 'qtype_postgresqlrunner'));
+        $output .= html_writer::end_tag('tr');
+        $output .= html_writer::end_tag('thead');
+        
+        $output .= html_writer::start_tag('tbody');
+        foreach ($state['structure'] as $column) {
+            $output .= html_writer::start_tag('tr');
+            $output .= html_writer::tag('td', s($column['column_name']));
+            
+            $datatype = $column['data_type'];
+            if ($column['character_maximum_length']) {
+                $datatype .= '(' . $column['character_maximum_length'] . ')';
+            }
+            $output .= html_writer::tag('td', s($datatype));
+            
+            $output .= html_writer::tag('td', s($column['is_nullable']));
+            $output .= html_writer::tag('td', s($column['column_default'] ? $column['column_default'] : ''));
+            $output .= html_writer::end_tag('tr');
+        }
+        $output .= html_writer::end_tag('tbody');
+        $output .= html_writer::end_tag('table');
+        $output .= html_writer::end_tag('div');
+        
+        $output .= html_writer::start_tag('div', array('class' => 'table-data'));
+        $output .= html_writer::tag('h5', get_string('tabledata', 'qtype_postgresqlrunner'));
+        
+        if (empty($state['data'])) {
+            $output .= html_writer::tag('p', get_string('nodatainside', 'qtype_postgresqlrunner'));
+        } else {
+            $output .= html_writer::start_tag('table', array('class' => 'sql-result-table'));
+            $output .= html_writer::start_tag('thead');
+            $output .= html_writer::start_tag('tr');
+            
+            $columns = array_keys($state['data'][0]);
+            foreach ($columns as $column) {
+                $output .= html_writer::tag('th', s($column));
+            }
+            
+            $output .= html_writer::end_tag('tr');
+            $output .= html_writer::end_tag('thead');
+            
+            $output .= html_writer::start_tag('tbody');
+            foreach ($state['data'] as $row) {
+                $output .= html_writer::start_tag('tr');
+                
+                foreach ($row as $value) {
+                    $output .= html_writer::tag('td', s($value));
+                }
+                
+                $output .= html_writer::end_tag('tr');
+            }
+            $output .= html_writer::end_tag('tbody');
+            $output .= html_writer::end_tag('table');
+        }
+        
+        $output .= html_writer::end_tag('div');
         
         return $output;
     }

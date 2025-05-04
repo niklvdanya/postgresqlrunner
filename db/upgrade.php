@@ -7,7 +7,6 @@ function xmldb_qtype_postgresqlrunner_upgrade($oldversion) {
     $dbman = $DB->get_manager();
     
     if ($oldversion < 2025050301) {
-        // Проверка и создание роли student_role
         $dbinfo = $DB->get_server_info();
         if ($dbinfo['dbtype'] === 'pgsql') {
             try {

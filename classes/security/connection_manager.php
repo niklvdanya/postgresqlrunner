@@ -3,7 +3,7 @@ namespace qtype_postgresqlrunner\security;
 
 defined('MOODLE_INTERNAL') || die();
 
-require_once($CFG->dirroot . '/question/type/postgresqlrunner/classes/security/sql_validator.php');
+require_once($CFG->dirroot . '/question/type/postgresqlrunner/classes/security/blacklist.php');
 
 class connection_manager {
     
@@ -268,13 +268,5 @@ class connection_manager {
         }
         
         return $result;
-    }
-    
-    public static function get_secure_display_connection($db_connection) {
-        return $db_connection;
-    }
-    
-    public static function obfuscate_connection_details($db_connection) {
-        return $db_connection;
     }
 }

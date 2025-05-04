@@ -683,7 +683,9 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
 
     public function get_sql_result($sql) {
         try {
-            \qtype_postgresqlrunner\security\blacklist::validate_sql($sql);
+            if (!is_string($sql) || strlen(trim($sql)) < 3) {
+                throw new Exception('Недопустимый SQL-запрос');
+            }
             $this->setup_test_environment();
             
             $result = \qtype_postgresqlrunner\security\connection_manager::safe_execute_query($this->conn, $sql);

@@ -23,7 +23,7 @@ class connection_manager {
         $dbhost = self::sanitize_connection_param($conn_details['host']);
         $dbname = self::sanitize_connection_param($conn_details['dbname']);
         $dbuser = self::sanitize_connection_param($conn_details['user']);
-        $dbpass = $conn_details['password'];
+        $dbpass = self::sanitize_connection_param($conn_details['password']);
         $dbport = isset($conn_details['port']) ? (int)$conn_details['port'] : 5432;
         
         if (!filter_var($dbhost, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) &&
@@ -37,31 +37,42 @@ class connection_manager {
         
         $salt = isset($CFG->passwordsaltmain) ? $CFG->passwordsaltmain : '';
         $session_id = session_id();
-        $unique_role_name = 'student_role_' . substr(md5($session_id . $salt), 0, 8);
-        $unique_role_password = bin2hex(random_bytes(16));
+        $unique_id = uniqid('', true);
+        $unique_role_name = 'student_role_' . substr(md5($session_id . $salt . $unique_id), 0, 16);
+        $unique_role_password = bin2hex(random_bytes(24));
         
-        $conn_string = sprintf(
-            "host=%s port=%d dbname=%s user=%s password=%s options='--client_encoding=UTF8'",
-            $dbhost,
-            $dbport,
-            $dbname,
-            $dbuser,
-            $dbpass
+        $connection_params = array(
+            'host' => $dbhost,
+            'port' => $dbport,
+            'dbname' => $dbname,
+            'user' => $dbuser,
+            'password' => $dbpass,
+            'options' => "--client_encoding=UTF8"
         );
         
-        $conn = @pg_connect($conn_string);
+        $conn = @pg_connect(self::build_connection_string($connection_params));
         
         if (!$conn) {
             throw new \Exception('Не удалось подключиться к базе данных PostgreSQL');
         }
         
-        pg_query($conn, "SET statement_timeout TO 3000");
+        pg_query($conn, "SET statement_timeout TO 2000");
         pg_query($conn, "SET search_path TO public");
         pg_query($conn, "SET client_min_messages TO warning");
         
+        self::setup_restricted_role($conn, $unique_role_name, $unique_role_password, $dbname);
+        
+        return $conn;
+    }
+    
+    private static function setup_restricted_role($conn, $role_name, $role_password, $dbname) {
         $role_exists = false;
-        $role_check_query = "SELECT 1 FROM pg_roles WHERE rolname = $1";
-        $role_check_result = pg_query_params($conn, $role_check_query, array($unique_role_name));
+        $safe_role_name = self::sanitize_connection_param($role_name);
+        
+        $role_check_result = pg_query_params($conn, 
+            "SELECT 1 FROM pg_roles WHERE rolname = $1", 
+            array($safe_role_name)
+        );
         
         if ($role_check_result && pg_num_rows($role_check_result) > 0) {
             $role_exists = true;
@@ -69,60 +80,78 @@ class connection_manager {
         }
     
         if (!$role_exists) {
-            $create_query = "CREATE ROLE $1 WITH LOGIN PASSWORD $2 CONNECTION LIMIT 5 VALID UNTIL current_timestamp + interval '1 hour'";
-            $create_result = @pg_query_params($conn, $create_query, array($unique_role_name, $unique_role_password));
+            $escaped_role_name = pg_escape_identifier($conn, $safe_role_name);
+            $escaped_password = pg_escape_literal($conn, $role_password);
             
-            if ($create_result) {
-                pg_free_result($create_result);
-                
-                @pg_query_params($conn, 
-                    "GRANT CONNECT ON DATABASE $1 TO $2", 
-                    array(pg_escape_identifier($conn, $dbname), $unique_role_name)
-                );
-                
-                @pg_query_params($conn, 
-                    "GRANT USAGE ON SCHEMA public TO $1", 
-                    array($unique_role_name)
-                );
-                
-                @pg_query_params($conn, 
-                    "GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO $1", 
-                    array($unique_role_name)
-                );
-                
-                @pg_query_params($conn, 
-                    "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE ON TABLES TO $1", 
-                    array($unique_role_name)
-                );
-                
-                @pg_query_params($conn, 
-                    "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, USAGE ON SEQUENCES TO $1", 
-                    array($unique_role_name)
-                );
-                
-                @pg_query_params($conn,
-                    "REVOKE ALL ON SCHEMA information_schema FROM $1",
-                    array($unique_role_name)
-                );
-                
-                @pg_query_params($conn,
-                    "REVOKE ALL ON SCHEMA pg_catalog FROM $1",
-                    array($unique_role_name)
-                );
+            $create_query = "CREATE ROLE " . $escaped_role_name . 
+                           " WITH LOGIN PASSWORD " . $escaped_password . 
+                           " CONNECTION LIMIT 3";
+                           
+            $result = pg_query($conn, $create_query);
+            
+            if (!$result) {
+                throw new \Exception('Не удалось создать временную роль для выполнения запросов');
+            }
+            pg_free_result($result);
+            
+            $alter_validity = "ALTER ROLE " . $escaped_role_name . " VALID UNTIL " . 
+                              pg_escape_literal($conn, date('Y-m-d H:i:s', time() + 900)); 
+            
+            $result = pg_query($conn, $alter_validity);
+            if (!$result) {
+                pg_query($conn, "COMMENT ON ROLE " . $escaped_role_name . 
+                        " IS 'Временная роль для учебных заданий'");
+            } else {
+                pg_free_result($result);
+            }
+            
+            $safe_dbname = pg_escape_identifier($conn, $dbname);
+            
+            $grant_connect = "GRANT CONNECT ON DATABASE " . $safe_dbname . " TO " . $escaped_role_name;
+            pg_query($conn, $grant_connect);
+            
+            $grant_usage = "GRANT USAGE ON SCHEMA public TO " . $escaped_role_name;
+            pg_query($conn, $grant_usage);
+            
+            $grant_select = "GRANT SELECT ON ALL TABLES IN SCHEMA public TO " . $escaped_role_name;
+            pg_query($conn, $grant_select);
+            
+            $revoke_info_schema = "REVOKE ALL ON SCHEMA information_schema FROM " . $escaped_role_name;
+            pg_query($conn, $revoke_info_schema);
+            
+            $revoke_pg_catalog = "REVOKE ALL ON SCHEMA pg_catalog FROM " . $escaped_role_name;
+            pg_query($conn, $revoke_pg_catalog);
+            
+            $restrict_query = "ALTER ROLE " . $escaped_role_name . " SET search_path = public";
+            pg_query($conn, $restrict_query);
+        }
     
-                $role_check_result = pg_query_params($conn, $role_check_query, array($unique_role_name));
-                if ($role_check_result && pg_num_rows($role_check_result) > 0) {
-                    $role_exists = true;
-                    pg_free_result($role_check_result);
-                }
+        $set_role_query = "SET ROLE " . pg_escape_identifier($conn, $safe_role_name);
+        $result = pg_query($conn, $set_role_query);
+        if (!$result) {
+            throw new \Exception('Не удалось переключиться на ограниченную роль');
+        }
+        pg_free_result($result);
+    }
+    
+    private static function execute_params($conn, $query, $params) {
+        $result = @pg_query_params($conn, $query, $params);
+        if ($result) {
+            pg_free_result($result);
+        }
+        return $result;
+    }
+    
+    private static function build_connection_string($params) {
+        $connection_parts = array();
+        foreach ($params as $key => $value) {
+            if ($key === 'options') {
+                $connection_parts[] = "$key='$value'";
+            } else {
+                $connection_parts[] = "$key=$value";
             }
         }
-    
-        if ($role_exists) {
-            @pg_query_params($conn, "SET ROLE $1", array($unique_role_name));
-        }
-        
-        return $conn;
+        return implode(' ', $connection_parts);
     }
     
     private static function sanitize_connection_param($param) {
@@ -130,7 +159,8 @@ class connection_manager {
             return '';
         }
         
-        $param = preg_replace('/[^a-zA-Z0-9_\-\.]/', '', $param);
+        $param = trim($param);
+        $param = preg_replace('/[^a-zA-Z0-9_\-\.\@\:\s]/', '', $param);
         return substr($param, 0, 64);
     }
     
@@ -218,7 +248,8 @@ class connection_manager {
         }
         
         $salt = isset($CFG->passwordsaltmain) ? $CFG->passwordsaltmain : '';
-        $key = hash('sha256', $salt, true);
+        $pepper = defined('MOODLE_INTERNAL') ? substr(hash('sha256', $CFG->wwwroot), 0, 16) : '';
+        $key = hash('sha256', $salt . $pepper, true);
         $iv = random_bytes(16);
         
         $encrypted = openssl_encrypt(
@@ -233,7 +264,8 @@ class connection_manager {
             return '';
         }
         
-        $result = base64_encode($iv . $encrypted);
+        $hmac = hash_hmac('sha256', $encrypted, $key, true);
+        $result = base64_encode($iv . $hmac . $encrypted);
         return $result;
     }
     
@@ -245,11 +277,22 @@ class connection_manager {
         }
         
         $salt = isset($CFG->passwordsaltmain) ? $CFG->passwordsaltmain : '';
-        $key = hash('sha256', $salt, true);
+        $pepper = defined('MOODLE_INTERNAL') ? substr(hash('sha256', $CFG->wwwroot), 0, 16) : '';
+        $key = hash('sha256', $salt . $pepper, true);
         
         $data = base64_decode($encrypted_string);
+        if ($data === false) {
+            return '';
+        }
+        
         $iv = substr($data, 0, 16);
-        $encrypted = substr($data, 16);
+        $hmac = substr($data, 16, 32);
+        $encrypted = substr($data, 48);
+        
+        $calculated_hmac = hash_hmac('sha256', $encrypted, $key, true);
+        if (!hash_equals($hmac, $calculated_hmac)) {
+            return '';
+        }
         
         $decrypted = openssl_decrypt(
             $encrypted,

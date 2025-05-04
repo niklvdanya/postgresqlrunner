@@ -14,25 +14,25 @@ class qtype_postgresqlrunner_edit_form extends question_edit_form {
         $mform->addElement('header', 'sqlheader', get_string('sqlheader', 'qtype_postgresqlrunner'));
     
         $mform->addElement('textarea', 'sqlcode', get_string('sqlcode', 'qtype_postgresqlrunner'),
-                          array('rows' => 10, 'cols' => 80, 'class' => 'postgresqlrunner text-monospace'));
+                           array('rows' => 10, 'cols' => 80, 'class' => 'postgresqlrunner text-monospace'));
         $mform->setType('sqlcode', PARAM_RAW);
         $mform->addRule('sqlcode', null, 'required', null, 'client');
         $mform->addHelpButton('sqlcode', 'sqlcode', 'qtype_postgresqlrunner');
     
-        $mform->addElement('textarea', 'expected_result', get_string('additionalinfo', 'qtype_postgresqlrunner'),
-                          array('rows' => 5, 'cols' => 80, 'class' => 'text-monospace'));
+        $mform->addElement('textarea', 'expected_result', get_string('expectedresult', 'qtype_postgresqlrunner'),
+                           array('rows' => 5, 'cols' => 80, 'class' => 'text-monospace'));
         $mform->setType('expected_result', PARAM_RAW);
-        $mform->addHelpButton('expected_result', 'additionalinfo', 'qtype_postgresqlrunner');
+        $mform->addHelpButton('expected_result', 'expectedresult', 'qtype_postgresqlrunner');
     
         $mform->addElement('textarea', 'db_connection', get_string('dbconnection', 'qtype_postgresqlrunner'),
-                          array('rows' => 5, 'cols' => 80, 'class' => 'text-monospace'));
+                           array('rows' => 5, 'cols' => 80, 'class' => 'text-monospace'));
         $mform->setType('db_connection', PARAM_RAW);
         $mform->addRule('db_connection', null, 'required', null, 'client');
         $mform->addHelpButton('db_connection', 'dbconnection', 'qtype_postgresqlrunner');
         $mform->setDefault('db_connection', '{"host": "localhost", "dbname": "postgres", "user": "postgres", "password": "postgres", "port": 5432}');
     
         $mform->addElement('textarea', 'template', get_string('template', 'qtype_postgresqlrunner'),
-                          array('rows' => 10, 'cols' => 80, 'class' => 'text-monospace'));
+                           array('rows' => 10, 'cols' => 80, 'class' => 'text-monospace'));
         $mform->setType('template', PARAM_RAW);
         $mform->addHelpButton('template', 'template', 'qtype_postgresqlrunner');
     

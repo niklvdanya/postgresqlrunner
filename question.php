@@ -128,77 +128,51 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
             throw new Exception('Некорректный SQL-запрос');
         }
         
+        $conn_status = false;
         if (isset($this->conn) && pg_connection_status($this->conn) === PGSQL_CONNECTION_OK) {
-            $result = \qtype_postgresqlrunner\security\connection_manager::safe_execute_query($this->conn, $sql);
-            
-            $data = array();
-            $fields = array();
-            
-            if (pg_num_fields($result) > 0) {
-                $num_fields = pg_num_fields($result);
-                
-                for ($i = 0; $i < $num_fields; $i++) {
-                    $fields[] = pg_field_name($result, $i);
-                }
-                
-                $rows_count = 0;
-                $max_rows = 500;
-                
-                while ($row = pg_fetch_assoc($result) and $rows_count < $max_rows) {
-                    $data[] = $row;
-                    $rows_count++;
-                }
-                
-                if ($rows_count >= $max_rows) {
-                    pg_free_result($result);
-                    throw new Exception('Запрос вернул слишком много строк. Ограничьте результат.');
-                }
-            }
-            
-            pg_free_result($result);
-            
-            return array(
-                'fields' => $fields,
-                'data' => $data
-            );
+            $conn_status = true;
         } else {
             $this->setup_test_environment();
+        }
+        
+        $result = \qtype_postgresqlrunner\security\connection_manager::safe_execute_query($this->conn, $sql);
+        
+        $data = array();
+        $fields = array();
+        
+        if (pg_num_fields($result) > 0) {
+            $num_fields = pg_num_fields($result);
             
-            $result = \qtype_postgresqlrunner\security\connection_manager::safe_execute_query($this->conn, $sql);
-            
-            $data = array();
-            $fields = array();
-            
-            if (pg_num_fields($result) > 0) {
-                $num_fields = pg_num_fields($result);
-                
-                for ($i = 0; $i < $num_fields; $i++) {
-                    $fields[] = pg_field_name($result, $i);
-                }
-                
-                $rows_count = 0;
-                $max_rows = 500;
-                
-                while ($row = pg_fetch_assoc($result) and $rows_count < $max_rows) {
-                    $data[] = $row;
-                    $rows_count++;
-                }
-                
-                if ($rows_count >= $max_rows) {
-                    pg_free_result($result);
-                    $this->cleanup_test_environment();
-                    throw new Exception('Запрос вернул слишком много строк. Ограничьте результат.');
-                }
+            for ($i = 0; $i < $num_fields; $i++) {
+                $fields[] = pg_field_name($result, $i);
             }
             
-            pg_free_result($result);
-            $this->cleanup_test_environment();
+            $rows_count = 0;
+            $max_rows = 500;
             
-            return array(
-                'fields' => $fields,
-                'data' => $data
-            );
+            while ($row = pg_fetch_assoc($result) and $rows_count < $max_rows) {
+                $data[] = $row;
+                $rows_count++;
+            }
+            
+            if ($rows_count >= $max_rows) {
+                pg_free_result($result);
+                if (!$conn_status) {
+                    $this->cleanup_test_environment();
+                }
+                throw new Exception('Запрос вернул слишком много строк. Ограничьте результат.');
+            }
         }
+        
+        pg_free_result($result);
+        if (!$conn_status) {
+            $this->cleanup_test_environment();
+        }
+        
+        return array(
+            'fields' => $fields,
+            'data' => $data
+        );
     }
     
     protected function check_select_query($student_query) {

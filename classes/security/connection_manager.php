@@ -33,7 +33,7 @@ class connection_manager {
         $question_id = optional_param('questionid', 0, PARAM_INT);
         
         $unique_role_name = 'student_' . $user_id . '_q' . $question_id . '_' . 
-                             substr(md5($session_id), 0, 8);
+                              substr(md5($session_id), 0, 8);
         $unique_role_password = bin2hex(random_bytes(16));
         
         $connection_params = array(

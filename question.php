@@ -3,7 +3,7 @@ defined('MOODLE_INTERNAL') || die();
 
 require_once($CFG->dirroot . '/question/engine/lib.php');
 require_once($CFG->dirroot . '/question/type/questionbase.php');
-require_once($CFG->dirroot . '/question/type/postgresqlrunner/classes/security/blacklist.php');
+require_once($CFG->dirroot . '/question/type/postgresqlrunner/classes/security/sql_validator.php');
 require_once($CFG->dirroot . '/question/type/postgresqlrunner/classes/security/connection_manager.php');
 
 class qtype_postgresqlrunner_question extends question_graded_automatically {
@@ -60,37 +60,6 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
         return array('answer' => $this->sqlcode);
     }
 
-    public function check_sql_answer($answer) {
-        if (empty($answer)) {
-            return 0;
-        }
-        
-        try {
-            \qtype_postgresqlrunner\security\blacklist::validate_sql($answer);
-            
-            $query_type = $this->determine_query_type($answer);
-            $this->setup_test_environment();
-            
-            if ($query_type === 'SELECT') {
-                $grade = $this->check_select_query($answer);
-            } else {
-                $grade = $this->check_state_changing_query($answer);
-            }
-            
-            if (isset($this->conn) && pg_connection_status($this->conn) === PGSQL_CONNECTION_OK) {
-                $this->cleanup_test_environment();
-            }
-            
-            return $grade;
-        } catch (Exception $e) {
-            if (isset($this->conn) && pg_connection_status($this->conn) === PGSQL_CONNECTION_OK) {
-                $this->cleanup_test_environment();
-            }
-            $this->student_query_error = $e->getMessage();
-            return 0.0;
-        }
-    }
-
     protected function determine_query_type($query) {
         $query = trim($query);
         $first_word = strtoupper(explode(' ', $query)[0]);
@@ -129,8 +98,39 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
         }
     }
 
+    public function check_sql_answer($answer) {
+        if (empty($answer)) {
+            return 0;
+        }
+        
+        try {
+            \qtype_postgresqlrunner\security\sql_validator::validate_sql($answer);
+            
+            $query_type = $this->determine_query_type($answer);
+            $this->setup_test_environment();
+            
+            if ($query_type === 'SELECT') {
+                $grade = $this->check_select_query($answer);
+            } else {
+                $grade = $this->check_state_changing_query($answer);
+            }
+            
+            if (isset($this->conn) && pg_connection_status($this->conn) === PGSQL_CONNECTION_OK) {
+                $this->cleanup_test_environment();
+            }
+            
+            return $grade;
+        } catch (Exception $e) {
+            if (isset($this->conn) && pg_connection_status($this->conn) === PGSQL_CONNECTION_OK) {
+                $this->cleanup_test_environment();
+            }
+            $this->student_query_error = $e->getMessage();
+            return 0.0;
+        }
+    }
+    
     public function execute_sql_query($sql) {
-        \qtype_postgresqlrunner\security\blacklist::validate_sql($sql);
+        \qtype_postgresqlrunner\security\sql_validator::validate_sql($sql);
         
         if (!is_string($sql) || empty(trim($sql))) {
             throw new Exception('Некорректный SQL-запрос');

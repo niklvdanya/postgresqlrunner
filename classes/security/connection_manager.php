@@ -3,6 +3,8 @@ namespace qtype_postgresqlrunner\security;
 
 defined('MOODLE_INTERNAL') || die();
 
+require_once($CFG->dirroot . '/question/type/postgresqlrunner/classes/security/sql_validator.php');
+
 class connection_manager {
     
     public static function get_connection($db_connection) {
@@ -230,8 +232,8 @@ class connection_manager {
     }
     
     public static function safe_execute_query($conn, $query) {
-        if (!\qtype_postgresqlrunner\security\blacklist::is_internal_query_allowed($query)) {
-            \qtype_postgresqlrunner\security\blacklist::validate_sql($query);
+        if (!\qtype_postgresqlrunner\security\sql_validator::is_internal_query_allowed($query)) {
+            \qtype_postgresqlrunner\security\sql_validator::validate_sql($query);
         }
         
         $query = self::sanitize_query($query);
@@ -246,8 +248,8 @@ class connection_manager {
     }
     
     public static function execute_parametrized_query($conn, $query, $params) {
-        if (!\qtype_postgresqlrunner\security\blacklist::is_internal_query_allowed($query)) {
-            \qtype_postgresqlrunner\security\blacklist::validate_sql($query);
+        if (!\qtype_postgresqlrunner\security\sql_validator::is_internal_query_allowed($query)) {
+            \qtype_postgresqlrunner\security\sql_validator::validate_sql($query);
         }
         
         $query = self::sanitize_query($query);

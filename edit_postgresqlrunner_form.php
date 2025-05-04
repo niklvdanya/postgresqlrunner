@@ -64,8 +64,20 @@ class qtype_postgresqlrunner_edit_form extends question_edit_form {
                 $errors['db_connection'] = get_string('invalidjson', 'qtype_postgresqlrunner');
             } else {
                 $db_data = json_decode($db_connection, true);
-                if (!isset($db_data['host']) || !isset($db_data['dbname']) || !isset($db_data['user'])) {
+                if (!isset($db_data['host']) || !isset($db_data['dbname']) || !isset($db_data['user']) || !isset($db_data['password'])) {
                     $errors['db_connection'] = get_string('invaliddbconnection', 'qtype_postgresqlrunner');
+                } else {
+                    if (!filter_var($db_data['host'], FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) &&
+                        !filter_var($db_data['host'], FILTER_VALIDATE_IP)) {
+                        $errors['db_connection'] = 'Некорректный адрес хоста базы данных';
+                    }
+                    
+                    if (isset($db_data['port'])) {
+                        $port = (int)$db_data['port'];
+                        if ($port < 1 || $port > 65535) {
+                            $errors['db_connection'] = 'Некорректный порт базы данных';
+                        }
+                    }
                 }
             }
         }

@@ -73,13 +73,13 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
                 $grade = $this->check_state_changing_query($answer);
             }
             
-            if (isset($this->conn) && is_resource($this->conn)) {
+            if (isset($this->conn) && pg_connection_status($this->conn) === PGSQL_CONNECTION_OK) {
                 $this->cleanup_test_environment();
             }
             
             return $grade;
         } catch (Exception $e) {
-            if (isset($this->conn) && is_resource($this->conn)) {
+            if (isset($this->conn) && pg_connection_status($this->conn) === PGSQL_CONNECTION_OK) {
                 $this->cleanup_test_environment();
             }
             return 0.0;
@@ -98,15 +98,45 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
     }
 
     protected function setup_test_environment() {
+        global $CFG;
+        
         $conn_details = json_decode($this->db_connection, true);
+        if (!$conn_details || !is_array($conn_details)) {
+            throw new Exception('Некорректные параметры подключения к базе данных');
+        }
+        
+        $required_fields = ['host', 'dbname', 'user', 'password'];
+        foreach ($required_fields as $field) {
+            if (!isset($conn_details[$field])) {
+                throw new Exception('Отсутствуют обязательные параметры подключения к базе данных');
+            }
+        }
         
         $dbhost = $conn_details['host'];
         $dbname = $conn_details['dbname'];
         $dbuser = $conn_details['user'];
         $dbpass = $conn_details['password'];
-        $dbport = isset($conn_details['port']) ? $conn_details['port'] : 5432;
+        $dbport = isset($conn_details['port']) ? (int)$conn_details['port'] : 5432;
         
-        $conn_string = "host=$dbhost port=$dbport dbname=$dbname user=$dbuser password=$dbpass";
+        if (!filter_var($dbhost, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) &&
+            !filter_var($dbhost, FILTER_VALIDATE_IP)) {
+            throw new Exception('Некорректный адрес хоста базы данных');
+        }
+        
+        if ($dbport < 1 || $dbport > 65535) {
+            throw new Exception('Некорректный порт базы данных');
+        }
+        
+        // Вместо pg_escape_string используем параметризованное подключение
+        $conn_string = sprintf(
+            "host=%s port=%d dbname=%s user=%s password=%s",
+            $dbhost,
+            $dbport,
+            $dbname,
+            $dbuser,
+            $dbpass
+        );
+        
         $this->conn = pg_connect($conn_string);
         
         if (!$this->conn) {
@@ -114,11 +144,15 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
         }
         
         $this->temp_prefix = 'temp_' . uniqid();
-        pg_query($this->conn, 'BEGIN');
+        
+        $result = pg_query($this->conn, 'BEGIN');
+        if (!$result) {
+            throw new Exception('Не удалось начать транзакцию: ' . pg_last_error($this->conn));
+        }
     }
 
     protected function cleanup_test_environment() {
-        if (isset($this->conn) && is_resource($this->conn)) {
+        if (isset($this->conn) && pg_connection_status($this->conn) === PGSQL_CONNECTION_OK) {
             pg_query($this->conn, 'ROLLBACK');
             pg_close($this->conn);
             $this->conn = null;
@@ -126,7 +160,11 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
     }
 
     public function execute_sql_query($sql) {
-        if (isset($this->conn) && is_resource($this->conn)) {
+        if (!is_string($sql) || empty(trim($sql))) {
+            throw new Exception('Некорректный SQL-запрос');
+        }
+        
+        if (isset($this->conn) && pg_connection_status($this->conn) === PGSQL_CONNECTION_OK) {
             $result = pg_query($this->conn, $sql);
             
             if (!$result) {
@@ -148,31 +186,20 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
                 }
             }
             
+            pg_free_result($result);
+            
             return array(
                 'fields' => $fields,
                 'data' => $data
             );
         } else {
-            $conn_details = json_decode($this->db_connection, true);
+            $this->setup_test_environment();
             
-            $dbhost = $conn_details['host'];
-            $dbname = $conn_details['dbname'];
-            $dbuser = $conn_details['user'];
-            $dbpass = $conn_details['password'];
-            $dbport = isset($conn_details['port']) ? $conn_details['port'] : 5432;
-            
-            $conn_string = "host=$dbhost port=$dbport dbname=$dbname user=$dbuser password=$dbpass";
-            $conn = pg_connect($conn_string);
-            
-            if (!$conn) {
-                throw new Exception('Не удалось подключиться к базе данных PostgreSQL');
-            }
-            
-            $result = pg_query($conn, $sql);
+            $result = pg_query($this->conn, $sql);
             
             if (!$result) {
-                $error = pg_last_error($conn);
-                pg_close($conn);
+                $error = pg_last_error($this->conn);
+                $this->cleanup_test_environment();
                 throw new Exception('Ошибка выполнения SQL-запроса: ' . $error);
             }
             
@@ -191,7 +218,8 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
                 }
             }
             
-            pg_close($conn);
+            pg_free_result($result);
+            $this->cleanup_test_environment();
             
             return array(
                 'fields' => $fields,
@@ -236,8 +264,15 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
             $snapshots_after_model[$table] = $this->get_table_state($table);
         }
         
-        pg_query($this->conn, 'ROLLBACK');
-        pg_query($this->conn, 'BEGIN');
+        $result = pg_query($this->conn, 'ROLLBACK');
+        if (!$result) {
+            throw new Exception('Не удалось выполнить ROLLBACK: ' . pg_last_error($this->conn));
+        }
+        
+        $result = pg_query($this->conn, 'BEGIN');
+        if (!$result) {
+            throw new Exception('Не удалось начать новую транзакцию: ' . pg_last_error($this->conn));
+        }
         
         foreach ($snapshots_before as $table => $state) {
             $this->restore_table_state($table, $state);
@@ -300,28 +335,35 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
             $tables[] = $row['table_name'];
         }
         
+        pg_free_result($result);
         return $tables;
     }
 
     protected function get_table_state($table) {
+        if (!preg_match('/^[a-zA-Z0-9_]+$/', $table)) {
+            throw new Exception('Некорректное имя таблицы');
+        }
+        
         $structure_query = "
             SELECT column_name, data_type, character_maximum_length, 
                    is_nullable, column_default, ordinal_position
             FROM information_schema.columns 
-            WHERE table_name = '{$table}'
+            WHERE table_name = $1
             ORDER BY ordinal_position
         ";
         
-        $structure_result = pg_query($this->conn, $structure_query);
+        $structure_result = pg_query_params($this->conn, $structure_query, array($table));
         
         if (!$structure_result) {
-            throw new Exception("Не удалось получить структуру таблицы {$table}");
+            throw new Exception("Не удалось получить структуру таблицы {$table}: " . pg_last_error($this->conn));
         }
         
         $structure = [];
         while ($row = pg_fetch_assoc($structure_result)) {
             $structure[] = $row;
         }
+        
+        pg_free_result($structure_result);
         
         $constraints_query = "
             SELECT tc.constraint_name, tc.constraint_type, 
@@ -330,20 +372,23 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
             JOIN information_schema.key_column_usage kcu 
               ON tc.constraint_name = kcu.constraint_name
              AND tc.table_name = kcu.table_name
-            WHERE tc.table_name = '{$table}'
+            WHERE tc.table_name = $1
             GROUP BY tc.constraint_name, tc.constraint_type
         ";
         
-        $constraints_result = pg_query($this->conn, $constraints_query);
+        $constraints_result = pg_query_params($this->conn, $constraints_query, array($table));
         
         $constraints = [];
         if ($constraints_result) {
             while ($row = pg_fetch_assoc($constraints_result)) {
                 $constraints[] = $row;
             }
+            pg_free_result($constraints_result);
         }
         
-        $data_query = "SELECT * FROM {$table}";
+        // Используем pg_escape_identifier для безопасного формирования запроса
+        $table_identifier = pg_escape_identifier($this->conn, $table);
+        $data_query = "SELECT * FROM {$table_identifier}";
         $data_result = pg_query($this->conn, $data_query);
         
         $data = [];
@@ -351,6 +396,7 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
             while ($row = pg_fetch_assoc($data_result)) {
                 $data[] = $row;
             }
+            pg_free_result($data_result);
         }
         
         return [
@@ -361,21 +407,32 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
     }
 
     protected function restore_table_state($table, $state) {
+        if (!preg_match('/^[a-zA-Z0-9_]+$/', $table)) {
+            throw new Exception('Некорректное имя таблицы');
+        }
+        
         if (empty($state['structure'])) {
             return;
         }
         
-        $drop_query = "DROP TABLE IF EXISTS {$table} CASCADE";
-        pg_query($this->conn, $drop_query);
+        // Используем pg_escape_identifier для безопасного формирования запроса
+        $table_identifier = pg_escape_identifier($this->conn, $table);
+        $drop_query = "DROP TABLE IF EXISTS {$table_identifier} CASCADE";
+        $result = pg_query($this->conn, $drop_query);
+        if (!$result) {
+            throw new Exception("Не удалось удалить таблицу {$table}: " . pg_last_error($this->conn));
+        }
+        pg_free_result($result);
         
-        $create_query = "CREATE TABLE {$table} (";
+        $create_query = "CREATE TABLE {$table_identifier} (";
         
         $columns = [];
         foreach ($state['structure'] as $column) {
-            $col_def = $column['column_name'] . ' ' . $column['data_type'];
+            $column_identifier = pg_escape_identifier($this->conn, $column['column_name']);
+            $col_def = $column_identifier . ' ' . $column['data_type'];
             
             if ($column['character_maximum_length']) {
-                $col_def .= '(' . $column['character_maximum_length'] . ')';
+                $col_def .= '(' . (int)$column['character_maximum_length'] . ')';
             }
             
             if ($column['is_nullable'] === 'NO') {
@@ -390,26 +447,47 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
         }
         
         $create_query .= implode(', ', $columns) . ')';
-        pg_query($this->conn, $create_query);
+        $result = pg_query($this->conn, $create_query);
+        if (!$result) {
+            throw new Exception("Не удалось создать таблицу {$table}: " . pg_last_error($this->conn));
+        }
+        pg_free_result($result);
         
         foreach ($state['constraints'] as $constraint) {
             if ($constraint['constraint_type'] === 'PRIMARY KEY') {
-                $query = "ALTER TABLE {$table} ADD CONSTRAINT {$constraint['constraint_name']} 
-                          PRIMARY KEY ({$constraint['columns']})";
-                pg_query($this->conn, $query);
+                $constraint_identifier = pg_escape_identifier($this->conn, $constraint['constraint_name']);
+                $query = "ALTER TABLE {$table_identifier} ADD CONSTRAINT {$constraint_identifier} PRIMARY KEY ({$constraint['columns']})";
+                $result = pg_query($this->conn, $query);
+                if (!$result) {
+                    throw new Exception("Не удалось добавить первичный ключ: " . pg_last_error($this->conn));
+                }
+                pg_free_result($result);
             }
         }
         
         if (!empty($state['data'])) {
             foreach ($state['data'] as $row) {
                 $columns = array_keys($row);
-                $values = array_map(function($val) {
-                    return "'" . pg_escape_string($this->conn, $val) . "'";
-                }, array_values($row));
+                $values = array_values($row);
                 
-                $insert_query = "INSERT INTO {$table} (" . implode(', ', $columns) . ") 
-                                VALUES (" . implode(', ', $values) . ")";
-                pg_query($this->conn, $insert_query);
+                $placeholders = array();
+                for ($i = 1; $i <= count($values); $i++) {
+                    $placeholders[] = '$' . $i;
+                }
+                
+                $column_identifiers = array_map(function($col) {
+                    return pg_escape_identifier($this->conn, $col);
+                }, $columns);
+                
+                $insert_query = "INSERT INTO {$table_identifier} (" . 
+                                implode(', ', $column_identifiers) . 
+                                ") VALUES (" . implode(', ', $placeholders) . ")";
+                
+                $result = pg_query_params($this->conn, $insert_query, $values);
+                if (!$result) {
+                    throw new Exception("Не удалось вставить данные: " . pg_last_error($this->conn));
+                }
+                pg_free_result($result);
             }
         }
     }
@@ -607,50 +685,45 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
     }
 
     public function get_sql_result($sql) {
-        $conn_details = json_decode($this->db_connection, true);
-        
-        $dbhost = $conn_details['host'];
-        $dbname = $conn_details['dbname'];
-        $dbuser = $conn_details['user'];
-        $dbpass = $conn_details['password'];
-        $dbport = isset($conn_details['port']) ? $conn_details['port'] : 5432;
-        
-        $conn_string = "host=$dbhost port=$dbport dbname=$dbname user=$dbuser password=$dbpass";
-        $conn = pg_connect($conn_string);
-        
-        if (!$conn) {
-            throw new Exception('Не удалось подключиться к базе данных PostgreSQL');
-        }
-        
-        $result = pg_query($conn, $sql);
-        
-        if (!$result) {
-            $error = pg_last_error($conn);
-            pg_close($conn);
-            throw new Exception('Ошибка выполнения SQL-запроса: ' . $error);
-        }
-        
-        $data = array();
-        $fields = array();
-        
-        if (pg_num_fields($result) > 0) {
-            $num_fields = pg_num_fields($result);
+        try {
+            $this->setup_test_environment();
             
-            for ($i = 0; $i < $num_fields; $i++) {
-                $fields[] = pg_field_name($result, $i);
+            $result = pg_query($this->conn, $sql);
+            
+            if (!$result) {
+                $error = pg_last_error($this->conn);
+                $this->cleanup_test_environment();
+                throw new Exception('Ошибка выполнения SQL-запроса: ' . $error);
             }
             
-            while ($row = pg_fetch_assoc($result)) {
-                $data[] = $row;
+            $data = array();
+            $fields = array();
+            
+            if (pg_num_fields($result) > 0) {
+                $num_fields = pg_num_fields($result);
+                
+                for ($i = 0; $i < $num_fields; $i++) {
+                    $fields[] = pg_field_name($result, $i);
+                }
+                
+                while ($row = pg_fetch_assoc($result)) {
+                    $data[] = $row;
+                }
             }
+            
+            pg_free_result($result);
+            $this->cleanup_test_environment();
+            
+            return array(
+                'fields' => $fields,
+                'data' => $data
+            );
+        } catch (Exception $e) {
+            if (isset($this->conn) && pg_connection_status($this->conn) === PGSQL_CONNECTION_OK) {
+                $this->cleanup_test_environment();
+            }
+            throw $e;
         }
-        
-        pg_close($conn);
-        
-        return array(
-            'fields' => $fields,
-            'data' => $data
-        );
     }
 
     public function get_student_table_state() {

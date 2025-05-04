@@ -52,8 +52,8 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
 
         if ($qa->get_state() == question_state::$invalid) {
             $result .= html_writer::nonempty_tag('div', 
-                                               $question->get_validation_error(array('answer' => $currentanswer)), 
-                                               array('class' => 'validationerror'));
+                                                $question->get_validation_error(array('answer' => $currentanswer)), 
+                                                array('class' => 'validationerror'));
         }
 
         $this->page->requires->js_call_amd('qtype_postgresqlrunner/pgrunner', 'init', 
@@ -85,6 +85,7 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
                         $feedback .= html_writer::tag('h4', get_string('yourresult', 'qtype_postgresqlrunner'));
                         $feedback .= $this->render_result_table($result);
                     } catch (Exception $e) {
+                        $feedback .= html_writer::tag('div', s($e->getMessage()), array('class' => 'sql-error'));
                     }
                 }
             } else {
@@ -108,12 +109,12 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
                     } else {
                         $student_error = $question->get_student_query_error();
                         if ($student_error) {
-                            $feedback .= html_writer::tag('div', get_string('queryerror', 'qtype_postgresqlrunner') . ': ' . $student_error, 
+                            $feedback .= html_writer::tag('div', get_string('queryerror', 'qtype_postgresqlrunner') . ': ' . s($student_error), 
                                                        array('class' => 'sql-error'));
                         } else {
                             $state_difference = $question->get_state_difference();
                             if ($state_difference) {
-                                $feedback .= html_writer::tag('div', $state_difference, array('class' => 'sql-error'));
+                                $feedback .= html_writer::tag('div', s($state_difference), array('class' => 'sql-error'));
                                 
                                 $student_state = $question->get_student_table_state();
                                 $model_state = $question->get_model_table_state();
@@ -133,7 +134,7 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
                         }
                     }
                 } catch (Exception $e) {
-                    $feedback .= html_writer::tag('div', $e->getMessage(), array('class' => 'sql-error'));
+                    $feedback .= html_writer::tag('div', s($e->getMessage()), array('class' => 'sql-error'));
                 }
             }
             
@@ -144,8 +145,18 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
     }
 
     protected function determine_query_type($query) {
+        if (!is_string($query)) {
+            return 'UNKNOWN';
+        }
+        
         $query = trim($query);
-        $first_word = strtoupper(explode(' ', $query)[0]);
+        $parts = explode(' ', $query);
+        
+        if (empty($parts)) {
+            return 'UNKNOWN';
+        }
+        
+        $first_word = strtoupper($parts[0]);
         
         if (strpos($first_word, 'SELECT') === 0) {
             return 'SELECT';
@@ -155,6 +166,10 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
     }
 
     protected function render_result_table($result) {
+        if (!is_array($result) || !isset($result['fields']) || !isset($result['data'])) {
+            return '';
+        }
+        
         $output = html_writer::start_tag('table', array('class' => 'sql-result-table'));
         
         $output .= html_writer::start_tag('thead');
@@ -184,7 +199,7 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
             $output .= html_writer::tag('tr', 
                                        html_writer::tag('td', 
                                                       get_string('noresults', 'qtype_postgresqlrunner'),
-                                                      array('colspan' => count($result['fields']))));
+                                                      array('colspan' => count($result['fields']) ? count($result['fields']) : 1)));
         }
         
         $output .= html_writer::end_tag('tbody');
@@ -194,6 +209,10 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
     }
 
     protected function render_table_state($state) {
+        if (!is_array($state) || !isset($state['structure'])) {
+            return '';
+        }
+        
         $output = '';
         
         $output .= html_writer::start_tag('div', array('class' => 'table-structure'));
@@ -215,13 +234,13 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
             $output .= html_writer::tag('td', s($column['column_name']));
             
             $datatype = $column['data_type'];
-            if ($column['character_maximum_length']) {
-                $datatype .= '(' . $column['character_maximum_length'] . ')';
+            if (isset($column['character_maximum_length']) && $column['character_maximum_length']) {
+                $datatype .= '(' . (int)$column['character_maximum_length'] . ')';
             }
             $output .= html_writer::tag('td', s($datatype));
             
             $output .= html_writer::tag('td', s($column['is_nullable']));
-            $output .= html_writer::tag('td', s($column['column_default'] ? $column['column_default'] : ''));
+            $output .= html_writer::tag('td', s(isset($column['column_default']) && $column['column_default'] ? $column['column_default'] : ''));
             $output .= html_writer::end_tag('tr');
         }
         $output .= html_writer::end_tag('tbody');
@@ -238,9 +257,11 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
             $output .= html_writer::start_tag('thead');
             $output .= html_writer::start_tag('tr');
             
-            $columns = array_keys($state['data'][0]);
-            foreach ($columns as $column) {
-                $output .= html_writer::tag('th', s($column));
+            if (!empty($state['data'][0]) && is_array($state['data'][0])) {
+                $columns = array_keys($state['data'][0]);
+                foreach ($columns as $column) {
+                    $output .= html_writer::tag('th', s($column));
+                }
             }
             
             $output .= html_writer::end_tag('tr');

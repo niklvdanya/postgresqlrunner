@@ -56,8 +56,15 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
                                                 array('class' => 'validationerror'));
         }
 
+        $csrftoken = sesskey();
+        $result .= html_writer::empty_tag('input', array(
+            'type' => 'hidden',
+            'name' => 'sesskey',
+            'value' => $csrftoken
+        ));
+
         $this->page->requires->js_call_amd('qtype_postgresqlrunner/pgrunner', 'init', 
-                                          array($inputname));
+                                         array($inputname));
 
         return $result;
     }
@@ -145,7 +152,10 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
     }
 
     protected function sanitize_error_message($message) {
-        $sensitive_terms = ['password', 'user', 'login', 'authenticate', 'connection', 'host'];
+        $sensitive_terms = [
+            'password', 'user', 'login', 'authenticate', 'connection', 'host',
+            'dbname', 'database', 'host', 'port', 'role', 'permission'
+        ];
         
         foreach ($sensitive_terms as $term) {
             if (stripos($message, $term) !== false) {

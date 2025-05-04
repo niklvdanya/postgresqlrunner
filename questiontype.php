@@ -39,6 +39,11 @@ class qtype_postgresqlrunner extends question_type {
         
         $options = $DB->get_record('qtype_postgresqlrunner_options', array('questionid' => $question->id));
     
+        if (isset($question->db_connection)) {
+            $encrypted_connection = \qtype_postgresqlrunner\security\connection_manager::encrypt_connection_string($question->db_connection);
+            $question->db_connection = $encrypted_connection;
+        }
+        
         if (!$options) {
             $options = new stdClass();
             $options->questionid = $question->id;
@@ -77,6 +82,13 @@ class qtype_postgresqlrunner extends question_type {
             return false;
         }
         
+        if (isset($question->options->db_connection) && !empty($question->options->db_connection)) {
+            $decrypted_connection = \qtype_postgresqlrunner\security\connection_manager::decrypt_connection_string($question->options->db_connection);
+            if (!empty($decrypted_connection)) {
+                $question->options->db_connection = $decrypted_connection;
+            }
+        }
+        
         $question->sqlcode = $question->options->sqlcode;
         $question->expected_result = $question->options->expected_result;
         $question->db_connection = $question->options->db_connection;
@@ -109,7 +121,12 @@ class qtype_postgresqlrunner extends question_type {
 
         $question->sqlcode = $format->getpath($data, array('#', 'sqlcode', 0, '#'), '');
         $question->expected_result = $format->getpath($data, array('#', 'expected_result', 0, '#'), '');
-        $question->db_connection = $format->getpath($data, array('#', 'db_connection', 0, '#'), '');
+        
+        $db_connection = $format->getpath($data, array('#', 'db_connection', 0, '#'), '');
+        if (!empty($db_connection)) {
+            $question->db_connection = $db_connection;
+        }
+        
         $question->template = $format->getpath($data, array('#', 'template', 0, '#'), '');
         $question->grading_type = $format->getpath($data, array('#', 'grading_type', 0, '#'), 'exact');
         $question->case_sensitive = $format->getpath($data, array('#', 'case_sensitive', 0, '#'), 0);

@@ -1,6 +1,6 @@
 define(['jquery'], function($) {
     
-    const maskPassword = function() {
+    const secureConnection = function() {
         const connectionField = $('#id_db_connection');
         
         if (connectionField.length === 0) {
@@ -11,8 +11,21 @@ define(['jquery'], function($) {
             try {
                 const connData = JSON.parse($(this).val());
                 if (connData && connData.password) {
+                    $(this).data('secure-password', connData.password);
                     connData.password = '********';
-                    $(this).data('original-password', connData.password);
+                    $(this).val(JSON.stringify(connData, null, 2));
+                }
+            } catch (e) {
+                // Invalid JSON, do nothing
+            }
+        });
+        
+        connectionField.on('blur', function() {
+            try {
+                const connData = JSON.parse($(this).val());
+                if (connData && connData.password && connData.password !== '********') {
+                    $(this).data('secure-password', connData.password);
+                    connData.password = '********';
                     $(this).val(JSON.stringify(connData, null, 2));
                 }
             } catch (e) {
@@ -23,8 +36,20 @@ define(['jquery'], function($) {
         connectionField.on('focus', function() {
             try {
                 const connData = JSON.parse($(this).val());
-                if (connData && connData.password === '********' && $(this).data('original-password')) {
-                    connData.password = $(this).data('original-password');
+                if (connData && connData.password === '********' && $(this).data('secure-password')) {
+                    connData.password = $(this).data('secure-password');
+                    $(this).val(JSON.stringify(connData, null, 2));
+                }
+            } catch (e) {
+                // Invalid JSON, do nothing
+            }
+        });
+        
+        connectionField.on('submit', function() {
+            try {
+                const connData = JSON.parse($(this).val());
+                if (connData && connData.password === '********' && $(this).data('secure-password')) {
+                    connData.password = $(this).data('secure-password');
                     $(this).val(JSON.stringify(connData, null, 2));
                 }
             } catch (e) {
@@ -37,7 +62,7 @@ define(['jquery'], function($) {
     
     return {
         init: function() {
-            maskPassword();
+            secureConnection();
         }
     };
 });

@@ -20,21 +20,44 @@ class blacklist {
         'current_setting', 'set_config', 'pg_read_binary_file', 
         'pg_ls_dir', 'pg_stat_file', 'current_database', 'current_schemas',
         'current_user', 'session_user', 'inet_client_addr', 'inet_client_port',
-        'inet_server_addr', 'inet_server_port', 'version'
+        'inet_server_addr', 'inet_server_port', 'version',
+        'FROM PG_', 'FROM INFORMATION_SCHEMA', 'EXECUTE', 'INTO OUTFILE', 'INTO DUMPFILE',
+        'UNION', 'OR 1=1', 'OR TRUE', 'OR "1"="1"', 'OR \'1\'=\'1\'', 'WAITFOR DELAY',
+        'HAVING 1=1', 'LIKE BINARY', 'EXEC', 'EXECUTE IMMEDIATE', 'DBMS_',
+        'CALL', 'DECLARE', '@@VERSION', 'SLEEP', 'BENCHMARK', 'LOAD_FILE',
+        'USER()', 'DATABASE()', 'SCHEMA()', 'SYSTEM_USER()', 'SESSION_USER()'
     ];
     
     private static $read_only_tables = [
         'pg_', 'user', 'password', 'config', 'settings', 'auth',
-        'role', 'permission', 'session', 'admin', 'security'
+        'role', 'permission', 'session', 'admin', 'security',
+        'login', 'account', 'moodle', 'mdl_', 'key', 'token',
+        'secret', 'certificate', 'auth', 'authent', 'credential',
+        'access', 'priv'
+    ];
+    
+    private static $allowed_query_patterns = [
+        '/^SELECT\s+.+?\s+FROM\s+.+$/i',
+        '/^INSERT\s+INTO\s+.+?\s+VALUES\s*\(.+\)$/i',
+        '/^UPDATE\s+.+?\s+SET\s+.+?\s+WHERE\s+.+$/i',
+        '/^CREATE\s+TABLE\s+.+?\s*\(.+\)$/i',
+        '/^BEGIN(\s+TRANSACTION)?$/i',
+        '/^COMMIT(\s+TRANSACTION)?$/i',
+        '/^ROLLBACK(\s+TRANSACTION)?$/i',
+        '/^SAVEPOINT\s+.+$/i'
     ];
     
     public static function validate_sql($sql) {
+        if (!is_string($sql) || strlen(trim($sql)) < 3) {
+            throw new \Exception('Недопустимый SQL-запрос');
+        }
+        
         $normalized_sql = self::normalize_sql($sql);
         
         foreach (self::$forbidden_commands as $command) {
             $normalized_command = strtoupper(trim($command));
             if (self::contains_forbidden_command($normalized_sql, $normalized_command)) {
-                throw new \Exception('Запрещенная команда: ' . $command);
+                throw new \Exception('Запрещенная команда: ' . substr($command, 0, 5) . '***');
             }
         }
         
@@ -64,10 +87,30 @@ class blacklist {
     
     private static function contains_forbidden_command($sql, $command) {
         $tokens = preg_split('/[\s\,\(\)\;\"\'\`]/', $sql);
-        return in_array($command, $tokens) || strpos($sql, $command . '(') !== false || strpos($sql, $command . ' ') !== false;
+        $special_case_match = 
+            strpos($sql, $command . '(') !== false || 
+            strpos($sql, $command . ' ') !== false || 
+            strpos($sql, '.' . $command) !== false || 
+            strpos($sql, $command . ';') !== false || 
+            strpos($sql, '=' . $command) !== false;
+        
+        return in_array($command, $tokens) || $special_case_match;
     }
     
     private static function is_student_allowed_query($sql) {
+        $is_allowed_pattern = false;
+        
+        foreach (self::$allowed_query_patterns as $pattern) {
+            if (preg_match($pattern, $sql)) {
+                $is_allowed_pattern = true;
+                break;
+            }
+        }
+        
+        if (!$is_allowed_pattern) {
+            return false;
+        }
+        
         $allowed_prefixes = [
             'SELECT ', 'INSERT INTO ', 'UPDATE ', 'CREATE TABLE ', 
             'BEGIN', 'COMMIT', 'ROLLBACK', 'SAVEPOINT'

@@ -29,7 +29,7 @@ class qtype_postgresqlrunner_edit_form extends question_edit_form {
         $mform->setType('db_connection', PARAM_RAW);
         $mform->addRule('db_connection', null, 'required', null, 'client');
         $mform->addHelpButton('db_connection', 'dbconnection', 'qtype_postgresqlrunner');
-        $mform->setDefault('db_connection', '{"host": "localhost", "dbname": "postgres", "user": "postgres", "password": "postgres", "port": 5432}');
+        $mform->setDefault('db_connection', '{"host": "db.example.com", "dbname": "practice_db", "user": "readonly_user", "password": "change_me_123", "port": 5432}');
     
         $mform->addElement('textarea', 'template', get_string('template', 'qtype_postgresqlrunner'),
                            array('rows' => 10, 'cols' => 80, 'class' => 'text-monospace'));

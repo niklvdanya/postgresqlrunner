@@ -103,6 +103,14 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
     }
 
     protected function setup_test_environment() {
+        $decrypted_connection = '';
+        if (strlen($this->db_connection) > 100) {
+            $decrypted_connection = \qtype_postgresqlrunner\security\connection_manager::decrypt_connection_string($this->db_connection);
+            if (!empty($decrypted_connection)) {
+                $this->db_connection = $decrypted_connection;
+            }
+        }
+        
         $this->conn = \qtype_postgresqlrunner\security\connection_manager::get_connection($this->db_connection);
         $this->temp_prefix = 'temp_' . uniqid();
         
@@ -141,8 +149,17 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
                     $fields[] = pg_field_name($result, $i);
                 }
                 
-                while ($row = pg_fetch_assoc($result)) {
+                $rows_count = 0;
+                $max_rows = 500;
+                
+                while ($row = pg_fetch_assoc($result) and $rows_count < $max_rows) {
                     $data[] = $row;
+                    $rows_count++;
+                }
+                
+                if ($rows_count >= $max_rows) {
+                    pg_free_result($result);
+                    throw new Exception('Запрос вернул слишком много строк. Ограничьте результат.');
                 }
             }
             
@@ -167,8 +184,18 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
                     $fields[] = pg_field_name($result, $i);
                 }
                 
-                while ($row = pg_fetch_assoc($result)) {
+                $rows_count = 0;
+                $max_rows = 500;
+                
+                while ($row = pg_fetch_assoc($result) and $rows_count < $max_rows) {
                     $data[] = $row;
+                    $rows_count++;
+                }
+                
+                if ($rows_count >= $max_rows) {
+                    pg_free_result($result);
+                    $this->cleanup_test_environment();
+                    throw new Exception('Запрос вернул слишком много строк. Ограничьте результат.');
                 }
             }
             
@@ -280,7 +307,7 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
 
     protected function get_all_tables() {
         $query = "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'";
-        $result = pg_query($this->conn, $query);
+        $result = pg_query_params($this->conn, $query, array());
         
         if (!$result) {
             return [];
@@ -342,17 +369,26 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
             pg_free_result($constraints_result);
         }
         
-        $table_identifier = pg_escape_identifier($this->conn, $table);
-        $data_query = "SELECT * FROM {$table_identifier}";
+        $data_query = "SELECT * FROM " . pg_escape_identifier($this->conn, $table);
         $data_result = \qtype_postgresqlrunner\security\connection_manager::safe_execute_query(
             $this->conn, $data_query
         );
         
         $data = [];
         if ($data_result) {
-            while ($row = pg_fetch_assoc($data_result)) {
+            $rows_count = 0;
+            $max_rows = 500;
+            
+            while ($row = pg_fetch_assoc($data_result) and $rows_count < $max_rows) {
                 $data[] = $row;
+                $rows_count++;
             }
+            
+            if ($rows_count >= $max_rows) {
+                pg_free_result($data_result);
+                throw new Exception('Таблица содержит слишком много строк. Ограничьте результат.');
+            }
+            
             pg_free_result($data_result);
         }
         
@@ -440,8 +476,9 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
                     $placeholders[] = '$' . $i;
                 }
                 
-                $column_identifiers = array_map(function($col) {
-                    return pg_escape_identifier($this->conn, $col);
+                $conn = $this->conn; 
+                $column_identifiers = array_map(function($col) use ($conn) {
+                    return pg_escape_identifier($conn, $col);
                 }, $columns);
                 
                 $insert_query = "INSERT INTO {$table_identifier} (" . 
@@ -669,8 +706,18 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
                     $fields[] = pg_field_name($result, $i);
                 }
                 
-                while ($row = pg_fetch_assoc($result)) {
+                $rows_count = 0;
+                $max_rows = 500;
+                
+                while ($row = pg_fetch_assoc($result) and $rows_count < $max_rows) {
                     $data[] = $row;
+                    $rows_count++;
+                }
+                
+                if ($rows_count >= $max_rows) {
+                    pg_free_result($result);
+                    $this->cleanup_test_environment();
+                    throw new Exception('Запрос вернул слишком много строк. Ограничьте результат.');
                 }
             }
             

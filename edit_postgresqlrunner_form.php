@@ -82,6 +82,14 @@ class qtype_postgresqlrunner_edit_form extends question_edit_form {
             }
         }
         
+        if (!empty($data['sqlcode'])) {
+            try {
+                \qtype_postgresqlrunner\security\blacklist::validate_sql($data['sqlcode']);
+            } catch (\Exception $e) {
+                $errors['sqlcode'] = $e->getMessage();
+            }
+        }
+        
         return $errors;
     }
 
@@ -102,7 +110,6 @@ class qtype_postgresqlrunner_edit_form extends question_edit_form {
         
         return $question;
     }
-    
     
     private function is_valid_json($string) {
         json_decode($string);

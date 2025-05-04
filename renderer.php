@@ -103,7 +103,7 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
                         $feedback .= html_writer::tag('h4', get_string('yourresult', 'qtype_postgresqlrunner'));
                         $feedback .= $this->render_result_table($student_result);
                         
-                        $feedback .= html_writer::tag('h4', get_string('expectedresult', 'qtype_postgresqlrunner'));
+                        $feedback .= html_writer::tag('h4', get_string('expectedresult_display', 'qtype_postgresqlrunner'));
                         $feedback .= $this->render_result_table($expected_result);
                         $feedback .= html_writer::end_tag('div');
                     } else {

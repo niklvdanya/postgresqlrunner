@@ -71,8 +71,8 @@ class qtype_postgresqlrunner extends question_type {
         global $DB;
         
         $question->options = $DB->get_record('qtype_postgresqlrunner_options', 
-                                            array('questionid' => $question->id));
-                                            
+                                             array('questionid' => $question->id));
+                                             
         if (!$question->options) {
             return false;
         }
@@ -123,7 +123,10 @@ class qtype_postgresqlrunner extends question_type {
 
         $output .= '    <sqlcode>' . $format->writetext($question->options->sqlcode) . "</sqlcode>\n";
         $output .= '    <expected_result>' . $format->writetext($question->options->expected_result) . "</expected_result>\n";
-        $output .= '    <db_connection>' . $format->writetext($question->options->db_connection) . "</db_connection>\n";
+        
+        $obfuscated_db_connection = \qtype_postgresqlrunner\security\connection_manager::obfuscate_connection_details($question->options->db_connection);
+        $output .= '    <db_connection>' . $format->writetext($obfuscated_db_connection) . "</db_connection>\n";
+        
         $output .= '    <template>' . $format->writetext($question->options->template) . "</template>\n";
         $output .= '    <grading_type>' . $format->writetext($question->options->grading_type) . "</grading_type>\n";
         $output .= '    <case_sensitive>' . $question->options->case_sensitive . "</case_sensitive>\n";

@@ -3,6 +3,8 @@ defined('MOODLE_INTERNAL') || die();
 
 require_once($CFG->dirroot . '/question/engine/lib.php');
 require_once($CFG->dirroot . '/question/type/questionbase.php');
+require_once($CFG->dirroot . '/question/type/postgresqlrunner/classes/security/blacklist.php');
+require_once($CFG->dirroot . '/question/type/postgresqlrunner/classes/security/connection_manager.php');
 
 class qtype_postgresqlrunner_question extends question_graded_automatically {
     public $sqlcode;
@@ -64,6 +66,8 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
         }
         
         try {
+            \qtype_postgresqlrunner\security\blacklist::validate_sql($answer);
+            
             $query_type = $this->determine_query_type($answer);
             $this->setup_test_environment();
             
@@ -82,6 +86,7 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
             if (isset($this->conn) && pg_connection_status($this->conn) === PGSQL_CONNECTION_OK) {
                 $this->cleanup_test_environment();
             }
+            $this->student_query_error = $e->getMessage();
             return 0.0;
         }
     }
@@ -98,57 +103,14 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
     }
 
     protected function setup_test_environment() {
-        global $CFG;
-        
-        $conn_details = json_decode($this->db_connection, true);
-        if (!$conn_details || !is_array($conn_details)) {
-            throw new Exception('Некорректные параметры подключения к базе данных');
-        }
-        
-        $required_fields = ['host', 'dbname', 'user', 'password'];
-        foreach ($required_fields as $field) {
-            if (!isset($conn_details[$field])) {
-                throw new Exception('Отсутствуют обязательные параметры подключения к базе данных');
-            }
-        }
-        
-        $dbhost = $conn_details['host'];
-        $dbname = $conn_details['dbname'];
-        $dbuser = $conn_details['user'];
-        $dbpass = $conn_details['password'];
-        $dbport = isset($conn_details['port']) ? (int)$conn_details['port'] : 5432;
-        
-        if (!filter_var($dbhost, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) &&
-            !filter_var($dbhost, FILTER_VALIDATE_IP)) {
-            throw new Exception('Некорректный адрес хоста базы данных');
-        }
-        
-        if ($dbport < 1 || $dbport > 65535) {
-            throw new Exception('Некорректный порт базы данных');
-        }
-        
-        // Вместо pg_escape_string используем параметризованное подключение
-        $conn_string = sprintf(
-            "host=%s port=%d dbname=%s user=%s password=%s",
-            $dbhost,
-            $dbport,
-            $dbname,
-            $dbuser,
-            $dbpass
-        );
-        
-        $this->conn = pg_connect($conn_string);
-        
-        if (!$this->conn) {
-            throw new Exception('Не удалось подключиться к базе данных PostgreSQL');
-        }
-        
+        $this->conn = \qtype_postgresqlrunner\security\connection_manager::get_connection($this->db_connection);
         $this->temp_prefix = 'temp_' . uniqid();
         
-        $result = pg_query($this->conn, 'BEGIN');
+        $result = \qtype_postgresqlrunner\security\connection_manager::safe_execute_query($this->conn, 'BEGIN');
         if (!$result) {
             throw new Exception('Не удалось начать транзакцию: ' . pg_last_error($this->conn));
         }
+        pg_free_result($result);
     }
 
     protected function cleanup_test_environment() {
@@ -160,16 +122,14 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
     }
 
     public function execute_sql_query($sql) {
+        \qtype_postgresqlrunner\security\blacklist::validate_sql($sql);
+        
         if (!is_string($sql) || empty(trim($sql))) {
             throw new Exception('Некорректный SQL-запрос');
         }
         
         if (isset($this->conn) && pg_connection_status($this->conn) === PGSQL_CONNECTION_OK) {
-            $result = pg_query($this->conn, $sql);
-            
-            if (!$result) {
-                throw new Exception('Ошибка выполнения SQL-запроса: ' . pg_last_error($this->conn));
-            }
+            $result = \qtype_postgresqlrunner\security\connection_manager::safe_execute_query($this->conn, $sql);
             
             $data = array();
             $fields = array();
@@ -195,13 +155,7 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
         } else {
             $this->setup_test_environment();
             
-            $result = pg_query($this->conn, $sql);
-            
-            if (!$result) {
-                $error = pg_last_error($this->conn);
-                $this->cleanup_test_environment();
-                throw new Exception('Ошибка выполнения SQL-запроса: ' . $error);
-            }
+            $result = \qtype_postgresqlrunner\security\connection_manager::safe_execute_query($this->conn, $sql);
             
             $data = array();
             $fields = array();
@@ -264,15 +218,17 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
             $snapshots_after_model[$table] = $this->get_table_state($table);
         }
         
-        $result = pg_query($this->conn, 'ROLLBACK');
+        $result = \qtype_postgresqlrunner\security\connection_manager::safe_execute_query($this->conn, 'ROLLBACK');
         if (!$result) {
             throw new Exception('Не удалось выполнить ROLLBACK: ' . pg_last_error($this->conn));
         }
+        pg_free_result($result);
         
-        $result = pg_query($this->conn, 'BEGIN');
+        $result = \qtype_postgresqlrunner\security\connection_manager::safe_execute_query($this->conn, 'BEGIN');
         if (!$result) {
             throw new Exception('Не удалось начать новую транзакцию: ' . pg_last_error($this->conn));
         }
+        pg_free_result($result);
         
         foreach ($snapshots_before as $table => $state) {
             $this->restore_table_state($table, $state);
@@ -352,11 +308,9 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
             ORDER BY ordinal_position
         ";
         
-        $structure_result = pg_query_params($this->conn, $structure_query, array($table));
-        
-        if (!$structure_result) {
-            throw new Exception("Не удалось получить структуру таблицы {$table}: " . pg_last_error($this->conn));
-        }
+        $structure_result = \qtype_postgresqlrunner\security\connection_manager::execute_parametrized_query(
+            $this->conn, $structure_query, array($table)
+        );
         
         $structure = [];
         while ($row = pg_fetch_assoc($structure_result)) {
@@ -376,7 +330,9 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
             GROUP BY tc.constraint_name, tc.constraint_type
         ";
         
-        $constraints_result = pg_query_params($this->conn, $constraints_query, array($table));
+        $constraints_result = \qtype_postgresqlrunner\security\connection_manager::execute_parametrized_query(
+            $this->conn, $constraints_query, array($table)
+        );
         
         $constraints = [];
         if ($constraints_result) {
@@ -386,10 +342,11 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
             pg_free_result($constraints_result);
         }
         
-        // Используем pg_escape_identifier для безопасного формирования запроса
         $table_identifier = pg_escape_identifier($this->conn, $table);
         $data_query = "SELECT * FROM {$table_identifier}";
-        $data_result = pg_query($this->conn, $data_query);
+        $data_result = \qtype_postgresqlrunner\security\connection_manager::safe_execute_query(
+            $this->conn, $data_query
+        );
         
         $data = [];
         if ($data_result) {
@@ -415,10 +372,12 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
             return;
         }
         
-        // Используем pg_escape_identifier для безопасного формирования запроса
         $table_identifier = pg_escape_identifier($this->conn, $table);
         $drop_query = "DROP TABLE IF EXISTS {$table_identifier} CASCADE";
-        $result = pg_query($this->conn, $drop_query);
+        $result = \qtype_postgresqlrunner\security\connection_manager::safe_execute_query(
+            $this->conn, $drop_query
+        );
+        
         if (!$result) {
             throw new Exception("Не удалось удалить таблицу {$table}: " . pg_last_error($this->conn));
         }
@@ -447,7 +406,10 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
         }
         
         $create_query .= implode(', ', $columns) . ')';
-        $result = pg_query($this->conn, $create_query);
+        $result = \qtype_postgresqlrunner\security\connection_manager::safe_execute_query(
+            $this->conn, $create_query
+        );
+        
         if (!$result) {
             throw new Exception("Не удалось создать таблицу {$table}: " . pg_last_error($this->conn));
         }
@@ -457,7 +419,10 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
             if ($constraint['constraint_type'] === 'PRIMARY KEY') {
                 $constraint_identifier = pg_escape_identifier($this->conn, $constraint['constraint_name']);
                 $query = "ALTER TABLE {$table_identifier} ADD CONSTRAINT {$constraint_identifier} PRIMARY KEY ({$constraint['columns']})";
-                $result = pg_query($this->conn, $query);
+                $result = \qtype_postgresqlrunner\security\connection_manager::safe_execute_query(
+                    $this->conn, $query
+                );
+                
                 if (!$result) {
                     throw new Exception("Не удалось добавить первичный ключ: " . pg_last_error($this->conn));
                 }
@@ -483,7 +448,10 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
                                 implode(', ', $column_identifiers) . 
                                 ") VALUES (" . implode(', ', $placeholders) . ")";
                 
-                $result = pg_query_params($this->conn, $insert_query, $values);
+                $result = \qtype_postgresqlrunner\security\connection_manager::execute_parametrized_query(
+                    $this->conn, $insert_query, $values
+                );
+                
                 if (!$result) {
                     throw new Exception("Не удалось вставить данные: " . pg_last_error($this->conn));
                 }
@@ -686,15 +654,10 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
 
     public function get_sql_result($sql) {
         try {
+            \qtype_postgresqlrunner\security\blacklist::validate_sql($sql);
             $this->setup_test_environment();
             
-            $result = pg_query($this->conn, $sql);
-            
-            if (!$result) {
-                $error = pg_last_error($this->conn);
-                $this->cleanup_test_environment();
-                throw new Exception('Ошибка выполнения SQL-запроса: ' . $error);
-            }
+            $result = \qtype_postgresqlrunner\security\connection_manager::safe_execute_query($this->conn, $sql);
             
             $data = array();
             $fields = array();

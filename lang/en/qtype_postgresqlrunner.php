@@ -48,3 +48,5 @@ $string['datatype'] = 'Data type';
 $string['nullable'] = 'Nullable';
 $string['defaultvalue'] = 'Default value';
 $string['nodatainside'] = 'Table contains no data';
+$string['forbidden_command'] = 'Forbidden SQL command detected';
+$string['system_table_access'] = 'Access to system tables is not allowed';

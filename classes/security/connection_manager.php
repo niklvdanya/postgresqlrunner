@@ -230,10 +230,80 @@ class connection_manager {
         
         return $query;
     }
+
+    private static function sanitize_error_message($message) {
+        $sensitive_terms = [
+            'password', 'passwd', 'pass', 'pwd', 'secret',
+            'user', 'username', 'login', 'authenticate', 'auth',
+            'connection', 'connect', 'host', 'hostname', 'server',
+            'dbname', 'database', 'db', 'schema', 'host', 'port',
+            'role', 'permission', 'priv', 'grant', 'access',
+            'ip', 'addr', 'address', 'socket', 'admin', 'root'
+        ];
+        
+        $sensitive_patterns = [
+            '/(?:password|passwd|pwd)[\s]*[=:][\s]*[\'"][^\'"]+[\'"]/',
+            '/(?:username|user|login)[\s]*[=:][\s]*[\'"][^\'"]+[\'"]/',
+            '/(?:host|server|hostname)[\s]*[=:][\s]*[\'"][^\'"]+[\'"]/',
+            '/(?:dbname|database|db|schema)[\s]*[=:][\s]*[\'"][^\'"]+[\'"]/',
+            '/(?:ip|addr|address)[\s]*[=:][\s]*[\'"0-9\.]+[\'"]/',
+            '/(?:\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/', 
+            '/(?:[a-zA-Z0-9_\-\.]+@[a-zA-Z0-9_\-\.]+\.[a-zA-Z]{2,})/' 
+        ];
+        
+        foreach ($sensitive_terms as $term) {
+            if (stripos($message, $term) !== false) {
+                return 'Ошибка SQL-запроса. Пожалуйста, проверьте синтаксис.';
+            }
+        }
+
+        foreach ($sensitive_patterns as $pattern) {
+            if (preg_match($pattern, $message)) {
+                return 'Ошибка SQL-запроса. Пожалуйста, проверьте синтаксис.';
+            }
+        }
+
+        $message = preg_replace('/(?:\/[a-zA-Z0-9_\-\.\/]+)+/', '[path]', $message);
+        
+
+        if (strlen($message) > 150) {
+            $message = substr($message, 0, 147) . '...';
+        }
+        
+        return $message;
+    }
     
+
+    public static function log_security_event($type, $details, $severity = 'warning') {
+        global $DB, $USER;
+        
+        $sanitized_details = self::sanitize_error_message($details);
+
+        $log_entry = new \stdClass();
+        $log_entry->type = $type;
+        $log_entry->details = $sanitized_details;
+        $log_entry->userid = isset($USER->id) ? $USER->id : 0;
+        $log_entry->timecreated = time();
+        $log_entry->severity = $severity;
+        $log_entry->ip = $_SERVER['REMOTE_ADDR'] ?? '';
+        
+        try {
+            if ($DB->get_manager()->table_exists('qtype_postgresqlrunner_security_log')) {
+                $DB->insert_record('qtype_postgresqlrunner_security_log', $log_entry);
+            }
+        } catch (\Exception $e) {
+            error_log('PostgreSQL Runner: ошибка логирования: ' . $e->getMessage());
+        }
+    }
+
     public static function safe_execute_query($conn, $query) {
         if (!\qtype_postgresqlrunner\security\sql_validator::is_internal_query_allowed($query)) {
-            \qtype_postgresqlrunner\security\sql_validator::validate_sql($query);
+            try {
+                \qtype_postgresqlrunner\security\sql_validator::validate_sql($query);
+            } catch (\Exception $e) {
+                self::log_security_event('sql_validation_error', $e->getMessage() . ' Query: ' . substr($query, 0, 100), 'warning');
+                throw $e;
+            }
         }
         
         $query = self::sanitize_query($query);
@@ -241,7 +311,10 @@ class connection_manager {
         $result = @pg_query($conn, $query);
         
         if (!$result) {
-            throw new \Exception('Ошибка выполнения SQL-запроса: ' . self::sanitize_error_message(pg_last_error($conn)));
+            $error_message = pg_last_error($conn);
+     
+            self::log_security_event('sql_execution_error', $error_message, 'error');
+            throw new \Exception('Ошибка выполнения SQL-запроса: ' . self::sanitize_error_message($error_message));
         }
         
         return $result;
@@ -263,20 +336,7 @@ class connection_manager {
         return $result;
     }
     
-    private static function sanitize_error_message($message) {
-        $sensitive_terms = [
-            'password', 'user', 'login', 'authenticate', 'connection', 'host',
-            'dbname', 'database', 'host', 'port', 'role', 'permission'
-        ];
-        
-        foreach ($sensitive_terms as $term) {
-            if (stripos($message, $term) !== false) {
-                return 'Ошибка SQL-запроса. Пожалуйста, проверьте синтаксис.';
-            }
-        }
-        
-        return $message;
-    }
+    
     
     public static function obfuscate_connection_details($db_connection) {
         $conn_details = json_decode($db_connection, true);
@@ -299,6 +359,7 @@ class connection_manager {
         return self::obfuscate_connection_details($db_connection);
     }
     
+
     public static function encrypt_connection_string($conn_string) {
         global $CFG;
         
@@ -306,10 +367,20 @@ class connection_manager {
             return '';
         }
         
-        $salt = isset($CFG->passwordsaltmain) ? $CFG->passwordsaltmain : '';
-        $pepper = defined('MOODLE_INTERNAL') ? substr(hash('sha256', $CFG->wwwroot), 0, 16) : '';
-        $key = hash('sha256', $salt . $pepper, true);
+        $site_salt = isset($CFG->passwordsaltmain) ? $CFG->passwordsaltmain : '';
+        $pepper = defined('MOODLE_INTERNAL') ? substr(hash('sha256', $CFG->wwwroot . $CFG->dataroot), 0, 16) : '';
+        $unique_id = uniqid('', true);
+        
         $iv = random_bytes(16);
+    
+        $key = hash_pbkdf2(
+            'sha256',
+            $site_salt . $pepper,
+            $iv,
+            10000,
+            32,    
+            true    
+        );
         
         $encrypted = openssl_encrypt(
             $conn_string,
@@ -322,12 +393,15 @@ class connection_manager {
         if ($encrypted === false) {
             return '';
         }
+
+        $hmac = hash_hmac('sha256', $iv . $encrypted, $key, true);
         
-        $hmac = hash_hmac('sha256', $encrypted, $key, true);
-        $result = base64_encode($iv . $hmac . $encrypted);
+        $version = pack('C', 1); 
+        $result = base64_encode($version . $iv . $hmac . $encrypted);
+        
         return $result;
     }
-    
+
     public static function decrypt_connection_string($encrypted_string) {
         global $CFG;
         
@@ -335,36 +409,79 @@ class connection_manager {
             return '';
         }
         
-        $salt = isset($CFG->passwordsaltmain) ? $CFG->passwordsaltmain : '';
-        $pepper = defined('MOODLE_INTERNAL') ? substr(hash('sha256', $CFG->wwwroot), 0, 16) : '';
-        $key = hash('sha256', $salt . $pepper, true);
-        
         $data = base64_decode($encrypted_string);
         if ($data === false) {
             return '';
         }
-        
-        $iv = substr($data, 0, 16);
-        $hmac = substr($data, 16, 32);
-        $encrypted = substr($data, 48);
-        
-        $calculated_hmac = hash_hmac('sha256', $encrypted, $key, true);
-        if (!hash_equals($hmac, $calculated_hmac)) {
+    
+        if (strlen($data) < 49) {
             return '';
         }
-        
-        $decrypted = openssl_decrypt(
-            $encrypted,
-            'AES-256-CBC',
-            $key,
-            OPENSSL_RAW_DATA,
-            $iv
-        );
-        
-        if ($decrypted === false) {
+
+        $version = ord($data[0]);
+
+        if ($version === 1) {
+            $iv = substr($data, 1, 16);
+            $hmac = substr($data, 17, 32);
+            $encrypted = substr($data, 49);
+
+            $site_salt = isset($CFG->passwordsaltmain) ? $CFG->passwordsaltmain : '';
+            $pepper = defined('MOODLE_INTERNAL') ? substr(hash('sha256', $CFG->wwwroot . $CFG->dataroot), 0, 16) : '';
+            
+            $key = hash_pbkdf2(
+                'sha256',
+                $site_salt . $pepper,
+                $iv,
+                10000,
+                32,
+                true
+            );
+            
+            $calculated_hmac = hash_hmac('sha256', $iv . $encrypted, $key, true);
+            
+            if (!hash_equals($hmac, $calculated_hmac)) {
+                return '';
+            }
+            
+            $decrypted = openssl_decrypt(
+                $encrypted,
+                'AES-256-CBC',
+                $key,
+                OPENSSL_RAW_DATA,
+                $iv
+            );
+            
+            if ($decrypted === false) {
+                return '';
+            }
+            
+            return $decrypted;
+        } elseif ($version === 0) {
+            try {
+                $iv = substr($data, 1, 16);
+                $encrypted = substr($data, 17);
+                
+                $salt = isset($CFG->passwordsaltmain) ? $CFG->passwordsaltmain : '';
+                $key = hash('sha256', $salt, true);
+                
+                $decrypted = openssl_decrypt(
+                    $encrypted,
+                    'AES-256-CBC',
+                    $key,
+                    OPENSSL_RAW_DATA,
+                    $iv
+                );
+                
+                if ($decrypted === false) {
+                    return '';
+                }
+                
+                return $decrypted;
+            } catch (Exception $e) {
+                return '';
+            }
+        } else {
             return '';
         }
-        
-        return $decrypted;
     }
 }

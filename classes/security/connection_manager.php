@@ -22,28 +22,18 @@ class connection_manager {
             }
         }
         
-        $dbhost = self::sanitize_connection_param($conn_details['host']);
-        $dbname = self::sanitize_connection_param($conn_details['dbname']);
-        $dbuser = self::sanitize_connection_param($conn_details['user']);
-        $dbpass = self::sanitize_connection_param($conn_details['password']);
+        $dbhost = $conn_details['host'];
+        $dbname = $conn_details['dbname'];
+        $dbuser = $conn_details['user'];
+        $dbpass = $conn_details['password'];
         $dbport = isset($conn_details['port']) ? (int)$conn_details['port'] : 5432;
         
-        if (!filter_var($dbhost, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) &&
-            !filter_var($dbhost, FILTER_VALIDATE_IP)) {
-            throw new \Exception('Некорректный адрес хоста базы данных');
-        }
-        
-        if ($dbport < 1 || $dbport > 65535) {
-            throw new \Exception('Некорректный порт базы данных');
-        }
-        
-        $salt = isset($CFG->passwordsaltmain) ? $CFG->passwordsaltmain : '';
         $session_id = session_id();
         $user_id = isset($USER->id) ? $USER->id : 0;
         $question_id = optional_param('questionid', 0, PARAM_INT);
         
         $unique_role_name = 'student_' . $user_id . '_q' . $question_id . '_' . 
-                            substr(md5($session_id . $salt), 0, 8);
+                             substr(md5($session_id), 0, 8);
         $unique_role_password = bin2hex(random_bytes(16));
         
         $connection_params = array(
@@ -72,11 +62,10 @@ class connection_manager {
     
     private static function setup_isolated_role($conn, $role_name, $role_password, $dbname, $user_id, $question_id) {
         $role_exists = false;
-        $safe_role_name = self::sanitize_connection_param($role_name);
         
         $role_check_result = pg_query_params($conn, 
             "SELECT 1 FROM pg_roles WHERE rolname = $1", 
-            array($safe_role_name)
+            array($role_name)
         );
         
         if ($role_check_result && pg_num_rows($role_check_result) > 0) {
@@ -85,7 +74,7 @@ class connection_manager {
         }
     
         if (!$role_exists) {
-            $escaped_role_name = pg_escape_identifier($conn, $safe_role_name);
+            $escaped_role_name = pg_escape_identifier($conn, $role_name);
             $escaped_password = pg_escape_literal($conn, $role_password);
             
             pg_query($conn, "BEGIN");
@@ -170,7 +159,7 @@ class connection_manager {
             }
         }
     
-        $set_role_query = "SET ROLE " . pg_escape_identifier($conn, $safe_role_name);
+        $set_role_query = "SET ROLE " . pg_escape_identifier($conn, $role_name);
         $result = pg_query($conn, $set_role_query);
         if (!$result) {
             throw new \Exception('Не удалось переключиться на ограниченную роль');
@@ -213,16 +202,6 @@ class connection_manager {
         return implode(' ', $connection_parts);
     }
     
-    private static function sanitize_connection_param($param) {
-        if (!is_string($param)) {
-            return '';
-        }
-        
-        $param = trim($param);
-        $param = preg_replace('/[^a-zA-Z0-9_\-\.\@\:\s]/', '', $param);
-        return substr($param, 0, 64);
-    }
-    
     public static function sanitize_query($query) {
         if (!is_string($query) || empty(trim($query))) {
             throw new \Exception('Некорректный SQL-запрос');
@@ -231,57 +210,12 @@ class connection_manager {
         return $query;
     }
 
-    private static function sanitize_error_message($message) {
-        $sensitive_terms = [
-            'password', 'passwd', 'pass', 'pwd', 'secret',
-            'user', 'username', 'login', 'authenticate', 'auth',
-            'connection', 'connect', 'host', 'hostname', 'server',
-            'dbname', 'database', 'db', 'schema', 'host', 'port',
-            'role', 'permission', 'priv', 'grant', 'access',
-            'ip', 'addr', 'address', 'socket', 'admin', 'root'
-        ];
-        
-        $sensitive_patterns = [
-            '/(?:password|passwd|pwd)[\s]*[=:][\s]*[\'"][^\'"]+[\'"]/',
-            '/(?:username|user|login)[\s]*[=:][\s]*[\'"][^\'"]+[\'"]/',
-            '/(?:host|server|hostname)[\s]*[=:][\s]*[\'"][^\'"]+[\'"]/',
-            '/(?:dbname|database|db|schema)[\s]*[=:][\s]*[\'"][^\'"]+[\'"]/',
-            '/(?:ip|addr|address)[\s]*[=:][\s]*[\'"0-9\.]+[\'"]/',
-            '/(?:\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/', 
-            '/(?:[a-zA-Z0-9_\-\.]+@[a-zA-Z0-9_\-\.]+\.[a-zA-Z]{2,})/' 
-        ];
-        
-        foreach ($sensitive_terms as $term) {
-            if (stripos($message, $term) !== false) {
-                return 'Ошибка SQL-запроса. Пожалуйста, проверьте синтаксис.';
-            }
-        }
-
-        foreach ($sensitive_patterns as $pattern) {
-            if (preg_match($pattern, $message)) {
-                return 'Ошибка SQL-запроса. Пожалуйста, проверьте синтаксис.';
-            }
-        }
-
-        $message = preg_replace('/(?:\/[a-zA-Z0-9_\-\.\/]+)+/', '[path]', $message);
-        
-
-        if (strlen($message) > 150) {
-            $message = substr($message, 0, 147) . '...';
-        }
-        
-        return $message;
-    }
-    
-
     public static function log_security_event($type, $details, $severity = 'warning') {
         global $DB, $USER;
         
-        $sanitized_details = self::sanitize_error_message($details);
-
         $log_entry = new \stdClass();
         $log_entry->type = $type;
-        $log_entry->details = $sanitized_details;
+        $log_entry->details = $details;
         $log_entry->userid = isset($USER->id) ? $USER->id : 0;
         $log_entry->timecreated = time();
         $log_entry->severity = $severity;
@@ -314,7 +248,7 @@ class connection_manager {
             $error_message = pg_last_error($conn);
      
             self::log_security_event('sql_execution_error', $error_message, 'error');
-            throw new \Exception('Ошибка выполнения SQL-запроса: ' . self::sanitize_error_message($error_message));
+            throw new \Exception('Ошибка выполнения SQL-запроса: ' . $error_message);
         }
         
         return $result;
@@ -330,158 +264,17 @@ class connection_manager {
         $result = @pg_query_params($conn, $query, $params);
         
         if (!$result) {
-            throw new \Exception('Ошибка выполнения SQL-запроса: ' . self::sanitize_error_message(pg_last_error($conn)));
+            throw new \Exception('Ошибка выполнения SQL-запроса: ' . pg_last_error($conn));
         }
         
         return $result;
-    }
-    
-    
-    
-    public static function obfuscate_connection_details($db_connection) {
-        $conn_details = json_decode($db_connection, true);
-        if (!$conn_details || !is_array($conn_details)) {
-            return json_encode(['error' => 'Invalid connection details']);
-        }
-        
-        if (isset($conn_details['password'])) {
-            $conn_details['password'] = '********';
-        }
-        
-        if (isset($conn_details['user'])) {
-            $conn_details['user'] = substr($conn_details['user'], 0, 3) . '****';
-        }
-        
-        return json_encode($conn_details);
     }
     
     public static function get_secure_display_connection($db_connection) {
-        return self::obfuscate_connection_details($db_connection);
+        return $db_connection;
     }
     
-
-    public static function encrypt_connection_string($conn_string) {
-        global $CFG;
-        
-        if (empty($conn_string)) {
-            return '';
-        }
-        
-        $site_salt = isset($CFG->passwordsaltmain) ? $CFG->passwordsaltmain : '';
-        $pepper = defined('MOODLE_INTERNAL') ? substr(hash('sha256', $CFG->wwwroot . $CFG->dataroot), 0, 16) : '';
-        $unique_id = uniqid('', true);
-        
-        $iv = random_bytes(16);
-    
-        $key = hash_pbkdf2(
-            'sha256',
-            $site_salt . $pepper,
-            $iv,
-            10000,
-            32,    
-            true    
-        );
-        
-        $encrypted = openssl_encrypt(
-            $conn_string,
-            'AES-256-CBC',
-            $key,
-            OPENSSL_RAW_DATA,
-            $iv
-        );
-        
-        if ($encrypted === false) {
-            return '';
-        }
-
-        $hmac = hash_hmac('sha256', $iv . $encrypted, $key, true);
-        
-        $version = pack('C', 1); 
-        $result = base64_encode($version . $iv . $hmac . $encrypted);
-        
-        return $result;
-    }
-
-    public static function decrypt_connection_string($encrypted_string) {
-        global $CFG;
-        
-        if (empty($encrypted_string)) {
-            return '';
-        }
-        
-        $data = base64_decode($encrypted_string);
-        if ($data === false) {
-            return '';
-        }
-    
-        if (strlen($data) < 49) {
-            return '';
-        }
-
-        $version = ord($data[0]);
-
-        if ($version === 1) {
-            $iv = substr($data, 1, 16);
-            $hmac = substr($data, 17, 32);
-            $encrypted = substr($data, 49);
-
-            $site_salt = isset($CFG->passwordsaltmain) ? $CFG->passwordsaltmain : '';
-            $pepper = defined('MOODLE_INTERNAL') ? substr(hash('sha256', $CFG->wwwroot . $CFG->dataroot), 0, 16) : '';
-            
-            $key = hash_pbkdf2(
-                'sha256',
-                $site_salt . $pepper,
-                $iv,
-                10000,
-                32,
-                true
-            );
-            
-            $calculated_hmac = hash_hmac('sha256', $iv . $encrypted, $key, true);
-            
-            if (!hash_equals($hmac, $calculated_hmac)) {
-                return '';
-            }
-            
-            $decrypted = openssl_decrypt(
-                $encrypted,
-                'AES-256-CBC',
-                $key,
-                OPENSSL_RAW_DATA,
-                $iv
-            );
-            
-            if ($decrypted === false) {
-                return '';
-            }
-            
-            return $decrypted;
-        } elseif ($version === 0) {
-            try {
-                $iv = substr($data, 1, 16);
-                $encrypted = substr($data, 17);
-                
-                $salt = isset($CFG->passwordsaltmain) ? $CFG->passwordsaltmain : '';
-                $key = hash('sha256', $salt, true);
-                
-                $decrypted = openssl_decrypt(
-                    $encrypted,
-                    'AES-256-CBC',
-                    $key,
-                    OPENSSL_RAW_DATA,
-                    $iv
-                );
-                
-                if ($decrypted === false) {
-                    return '';
-                }
-                
-                return $decrypted;
-            } catch (Exception $e) {
-                return '';
-            }
-        } else {
-            return '';
-        }
+    public static function obfuscate_connection_details($db_connection) {
+        return $db_connection;
     }
 }

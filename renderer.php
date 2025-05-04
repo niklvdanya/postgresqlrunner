@@ -17,11 +17,11 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
             'rows' => 15,
             'cols' => 80
         );
-
+    
         if ($options->readonly) {
             $inputattributes['readonly'] = 'readonly';
         }
-
+    
         $questiontext = $question->format_questiontext($qa);
         $placeholder = false;
         
@@ -41,7 +41,7 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
                 $currentanswer = $template;
             }
         }
-
+    
         $result = html_writer::tag('div', $questiontext, array('class' => 'qtext'));
         if ($qa->get_state() == question_state::$finished) {
             if (method_exists($question, 'cleanup_resources')) {
@@ -53,23 +53,20 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
             $result .= html_writer::tag('textarea', s($currentanswer), $inputattributes);
             $result .= html_writer::end_tag('div');
         }
-
+    
         if ($qa->get_state() == question_state::$invalid) {
             $result .= html_writer::nonempty_tag('div', 
                                                 $question->get_validation_error(array('answer' => $currentanswer)), 
                                                 array('class' => 'validationerror'));
         }
-
+    
         $csrftoken = sesskey();
         $result .= html_writer::empty_tag('input', array(
             'type' => 'hidden',
             'name' => 'sesskey',
             'value' => $csrftoken
         ));
-
-        $this->page->requires->js_call_amd('qtype_postgresqlrunner/pgrunner', 'init', 
-                                         array($inputname));
-
+    
         return $result;
     }
 
@@ -156,17 +153,6 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
     }
 
     protected function sanitize_error_message($message) {
-        $sensitive_terms = [
-            'password', 'user', 'login', 'authenticate', 'connection', 'host',
-            'dbname', 'database', 'host', 'port', 'role', 'permission'
-        ];
-        
-        foreach ($sensitive_terms as $term) {
-            if (stripos($message, $term) !== false) {
-                return 'Ошибка SQL-запроса. Пожалуйста, проверьте синтаксис.';
-            }
-        }
-        
         return $message;
     }
 

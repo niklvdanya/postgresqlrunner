@@ -1,103 +1,80 @@
 <?php
 defined('MOODLE_INTERNAL') || die();
 
-require_once($CFG->dirroot . '/question/type/edit_question_form.php');
-require_once($CFG->dirroot . '/question/type/postgresqlrunner/questiontype.php');
+require_once($CFG->libdir . '/questionlib.php');
+require_once($CFG->dirroot . '/question/engine/lib.php');
+require_once($CFG->dirroot . '/question/type/postgresqlrunner/question.php');
 
-class qtype_postgresqlrunner_edit_form extends question_edit_form {
+class qtype_postgresqlrunner extends question_type {
+    public function extra_question_fields() {
+        return array('qtype_postgresqlrunner_options', 
+                    'sqlcode', 
+                    'expected_result', 
+                    'db_connection', 
+                    'template', 
+                    'grading_type',
+                    'case_sensitive',
+                    'allow_ordering_difference');
+    }
 
-    public function qtype() {
-        return 'postgresqlrunner';
+    public function move_files($questionid, $oldcontextid, $newcontextid) {
+        parent::move_files($questionid, $oldcontextid, $newcontextid);
+        $this->move_files_in_hints($questionid, $oldcontextid, $newcontextid);
     }
-    
-    protected function definition_inner($mform) {
-        $mform->addElement('header', 'sqlheader', get_string('sqlheader', 'qtype_postgresqlrunner'));
-    
-        $mform->addElement('textarea', 'sqlcode', get_string('sqlcode', 'qtype_postgresqlrunner'),
-                           array('rows' => 10, 'cols' => 80, 'class' => 'postgresqlrunner text-monospace'));
-        $mform->setType('sqlcode', PARAM_RAW);
-        $mform->addRule('sqlcode', null, 'required', null, 'client');
-        $mform->addHelpButton('sqlcode', 'sqlcode', 'qtype_postgresqlrunner');
-    
-        $mform->addElement('textarea', 'expected_result', get_string('expectedresult', 'qtype_postgresqlrunner'),
-                           array('rows' => 5, 'cols' => 80, 'class' => 'text-monospace'));
-        $mform->setType('expected_result', PARAM_RAW);
-        $mform->addHelpButton('expected_result', 'expectedresult', 'qtype_postgresqlrunner');
-    
-        $mform->addElement('textarea', 'db_connection', get_string('dbconnection', 'qtype_postgresqlrunner'),
-                           array('rows' => 5, 'cols' => 80, 'class' => 'text-monospace'));
-        $mform->setType('db_connection', PARAM_RAW);
-        $mform->addRule('db_connection', null, 'required', null, 'client');
-        $mform->addHelpButton('db_connection', 'dbconnection', 'qtype_postgresqlrunner');
-        $mform->setDefault('db_connection', '{"host": "db.example.com", "dbname": "practice_db", "user": "readonly_user", "password": "change_me_123", "port": 5432}');
-    
-        $mform->addElement('textarea', 'template', get_string('template', 'qtype_postgresqlrunner'),
-                           array('rows' => 10, 'cols' => 80, 'class' => 'text-monospace'));
-        $mform->setType('template', PARAM_RAW);
-        $mform->addHelpButton('template', 'template', 'qtype_postgresqlrunner');
-    
-        $gradingtypes = array(
-            'exact' => get_string('gradingtypeexact', 'qtype_postgresqlrunner'),
-            'partial' => get_string('gradingtypepartial', 'qtype_postgresqlrunner')
-        );
-        $mform->addElement('select', 'grading_type', get_string('gradingtype', 'qtype_postgresqlrunner'), $gradingtypes);
-        $mform->setDefault('grading_type', 'exact');
-        $mform->addHelpButton('grading_type', 'gradingtype', 'qtype_postgresqlrunner');
-    
-        $mform->addElement('advcheckbox', 'case_sensitive', get_string('casesensitive', 'qtype_postgresqlrunner'));
-        $mform->setDefault('case_sensitive', 0);
-        $mform->addHelpButton('case_sensitive', 'casesensitive', 'qtype_postgresqlrunner');
-    
-        $mform->addElement('advcheckbox', 'allow_ordering_difference', get_string('alloworderingdifference', 'qtype_postgresqlrunner'));
-        $mform->setDefault('allow_ordering_difference', 0);
-        $mform->addHelpButton('allow_ordering_difference', 'alloworderingdifference', 'qtype_postgresqlrunner');
-    
-        $this->add_interactive_settings();
+
+    protected function delete_files($questionid, $contextid) {
+        parent::delete_files($questionid, $contextid);
+        $this->delete_files_in_hints($questionid, $contextid);
     }
+
+    public function save_question_options($question) {
+        global $DB;
     
-    public function validation($data, $files) {
-        $errors = parent::validation($data, $files);
+        $context = $question->context;
         
-        if (!empty($data['db_connection'])) {
-            $db_connection = $data['db_connection'];
-            if (!$this->is_valid_json($db_connection)) {
-                $errors['db_connection'] = get_string('invalidjson', 'qtype_postgresqlrunner');
-            } else {
-                $db_data = json_decode($db_connection, true);
-                if (!isset($db_data['host']) || !isset($db_data['dbname']) || !isset($db_data['user']) || !isset($db_data['password'])) {
-                    $errors['db_connection'] = get_string('invaliddbconnection', 'qtype_postgresqlrunner');
-                } else {
-                    if (!filter_var($db_data['host'], FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) &&
-                        !filter_var($db_data['host'], FILTER_VALIDATE_IP)) {
-                        $errors['db_connection'] = 'Некорректный адрес хоста базы данных';
-                    }
-                    
-                    if (isset($db_data['port'])) {
-                        $port = (int)$db_data['port'];
-                        if ($port < 1 || $port > 65535) {
-                            $errors['db_connection'] = 'Некорректный порт базы данных';
-                        }
-                    }
-                }
-            }
+        $dbman = $DB->get_manager();
+        if (!$dbman->table_exists('qtype_postgresqlrunner_options')) {
+            return false;
         }
         
-        if (!empty($data['sqlcode'])) {
-            try {
-                \qtype_postgresqlrunner\security\blacklist::validate_sql($data['sqlcode']);
-            } catch (\Exception $e) {
-                $errors['sqlcode'] = $e->getMessage();
-            }
+        $options = $DB->get_record('qtype_postgresqlrunner_options', array('questionid' => $question->id));
+    
+        if (!$options) {
+            $options = new stdClass();
+            $options->questionid = $question->id;
+            $options->sqlcode = $question->sqlcode;
+            $options->expected_result = $question->expected_result;
+            $options->db_connection = $question->db_connection;
+            $options->template = isset($question->template) ? $question->template : '';
+            $options->grading_type = isset($question->grading_type) ? $question->grading_type : 'exact';
+            $options->case_sensitive = isset($question->case_sensitive) ? $question->case_sensitive : 0;
+            $options->allow_ordering_difference = isset($question->allow_ordering_difference) ? $question->allow_ordering_difference : 0;
+            
+            $options->id = $DB->insert_record('qtype_postgresqlrunner_options', $options);
+        } else {
+            $options->sqlcode = $question->sqlcode;
+            $options->expected_result = $question->expected_result;
+            $options->db_connection = $question->db_connection;
+            $options->template = isset($question->template) ? $question->template : '';
+            $options->grading_type = isset($question->grading_type) ? $question->grading_type : 'exact';
+            $options->case_sensitive = isset($question->case_sensitive) ? $question->case_sensitive : 0;
+            $options->allow_ordering_difference = isset($question->allow_ordering_difference) ? $question->allow_ordering_difference : 0;
+    
+            $DB->update_record('qtype_postgresqlrunner_options', $options);
         }
-        
-        return $errors;
+    
+        $this->save_hints($question);
+        return true;
     }
 
-    protected function data_preprocessing($question) {
-        $question = parent::data_preprocessing($question);
+    public function get_question_options($question) {
+        global $DB;
         
-        if (empty($question->options)) {
-            return $question;
+        $question->options = $DB->get_record('qtype_postgresqlrunner_options', 
+                                             array('questionid' => $question->id));
+                                             
+        if (!$question->options) {
+            return false;
         }
         
         $question->sqlcode = $question->options->sqlcode;
@@ -108,61 +85,61 @@ class qtype_postgresqlrunner_edit_form extends question_edit_form {
         $question->case_sensitive = $question->options->case_sensitive;
         $question->allow_ordering_difference = $question->options->allow_ordering_difference;
         
+        parent::get_question_options($question);
+        return true;
+    }
+
+    public function get_random_guess_score($questiondata) {
+        return 0;
+    }
+
+    public function get_possible_responses($questiondata) {
+        return array(array($questiondata->id => 
+            array(0 => get_string('incorrect', 'qtype_postgresqlrunner'),
+                  1 => get_string('correct', 'qtype_postgresqlrunner'))));
+    }
+
+    public function import_from_xml($data, $question, qformat_xml $format, $extra=null) {
+        if (!isset($data['@']['type']) || $data['@']['type'] != 'postgresqlrunner') {
+            return false;
+        }
+
+        $question = parent::import_from_xml($data, $question, $format, $extra);
+        $format->import_hints($question, $data, true);
+
+        $question->sqlcode = $format->getpath($data, array('#', 'sqlcode', 0, '#'), '');
+        $question->expected_result = $format->getpath($data, array('#', 'expected_result', 0, '#'), '');
+        
+        $db_connection = $format->getpath($data, array('#', 'db_connection', 0, '#'), '');
+        if (!empty($db_connection)) {
+            $question->db_connection = $db_connection;
+        }
+        
+        $question->template = $format->getpath($data, array('#', 'template', 0, '#'), '');
+        $question->grading_type = $format->getpath($data, array('#', 'grading_type', 0, '#'), 'exact');
+        $question->case_sensitive = $format->getpath($data, array('#', 'case_sensitive', 0, '#'), 0);
+        $question->allow_ordering_difference = $format->getpath($data, array('#', 'allow_ordering_difference', 0, '#'), 0);
+
         return $question;
     }
-    
-    private function is_valid_json($string) {
-        json_decode($string);
-        return (json_last_error() == JSON_ERROR_NONE);
+
+    public function export_to_xml($question, qformat_xml $format, $extra=null) {
+        $output = parent::export_to_xml($question, $format, $extra);
+
+        $output .= '    <sqlcode>' . $format->writetext($question->options->sqlcode) . "</sqlcode>\n";
+        $output .= '    <expected_result>' . $format->writetext($question->options->expected_result) . "</expected_result>\n";
+        $output .= '    <db_connection>' . $format->writetext($question->options->db_connection) . "</db_connection>\n";
+        $output .= '    <template>' . $format->writetext($question->options->template) . "</template>\n";
+        $output .= '    <grading_type>' . $format->writetext($question->options->grading_type) . "</grading_type>\n";
+        $output .= '    <case_sensitive>' . $question->options->case_sensitive . "</case_sensitive>\n";
+        $output .= '    <allow_ordering_difference>' . $question->options->allow_ordering_difference . "</allow_ordering_difference>\n";
+
+        return $output;
     }
-
-    public function cleanup_resources() {
-        global $USER, $DB;
-        
-        $user_id = isset($USER->id) ? $USER->id : 0;
-        $question_id = $this->id;
-        
-        if (!isset($this->conn) || pg_connection_status($this->conn) !== PGSQL_CONNECTION_OK) {
-            try {
-                $decrypted_connection = '';
-                if (strlen($this->db_connection) > 100) {
-                    $decrypted_connection = \qtype_postgresqlrunner\security\connection_manager::decrypt_connection_string($this->db_connection);
-                    if (!empty($decrypted_connection)) {
-                        $this->db_connection = $decrypted_connection;
-                    }
-                }
-                
-                $this->conn = \qtype_postgresqlrunner\security\connection_manager::get_connection($this->db_connection);
-            } catch (Exception $e) {
-                return;
-            }
-        }
-        
-
-        try {
-            \qtype_postgresqlrunner\security\connection_manager::cleanup_resources($this->conn, $user_id, $question_id);
-        } catch (Exception $e) {
-            error_log('Ошибка при очистке ресурсов PostgreSQL: ' . $e->getMessage());
-        }
-        
-        if (isset($this->conn) && pg_connection_status($this->conn) === PGSQL_CONNECTION_OK) {
-            pg_close($this->conn);
-            $this->conn = null;
-        }
-
-        $log_entry = (object) [
-            'userid' => $user_id,
-            'questionid' => $question_id,
-            'action' => 'cleanup',
-            'timestamp' => time()
-        ];
-        
-        $table_exists = $DB->get_manager()->table_exists('qtype_postgresqlrunner_log');
-        if ($table_exists) {
-            try {
-                $DB->insert_record('qtype_postgresqlrunner_log', $log_entry);
-            } catch (Exception $e) {
-            }
-        }
+    
+    public function display_question_settings_form($question, $context) {
+        global $PAGE;
+        $PAGE->requires->js_call_amd('qtype_postgresqlrunner/admin', 'init', array());
+        parent::display_question_settings_form($question, $context);
     }
 }

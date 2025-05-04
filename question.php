@@ -72,14 +72,6 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
     }
 
     protected function setup_test_environment() {
-        $decrypted_connection = '';
-        if (strlen($this->db_connection) > 100) {
-            $decrypted_connection = \qtype_postgresqlrunner\security\connection_manager::decrypt_connection_string($this->db_connection);
-            if (!empty($decrypted_connection)) {
-                $this->db_connection = $decrypted_connection;
-            }
-        }
-        
         $this->conn = \qtype_postgresqlrunner\security\connection_manager::get_connection($this->db_connection);
         $this->temp_prefix = 'temp_' . uniqid();
         

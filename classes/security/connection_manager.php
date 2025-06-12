@@ -3,8 +3,6 @@ namespace qtype_postgresqlrunner\security;
 
 defined('MOODLE_INTERNAL') || die();
 
-require_once($CFG->dirroot . '/question/type/postgresqlrunner/classes/security/blacklist.php');
-
 class connection_manager {
     
     public static function get_connection($db_connection) {

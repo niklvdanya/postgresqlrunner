@@ -9,7 +9,6 @@ require_once($CFG->dirroot . '/question/type/postgresqlrunner/classes/security/c
 class qtype_postgresqlrunner_question extends question_graded_automatically {
     public $sqlcode;
     public $expected_result;
-    public $db_connection;
     public $template;
     public $grading_type;
     public $case_sensitive;
@@ -72,9 +71,12 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
     }
 
     protected function setup_test_environment() {
-        $this->conn = \qtype_postgresqlrunner\security\connection_manager::get_connection($this->db_connection);
+        global $CFG;
+        $config = require($CFG->dirroot . '/question/type/postgresqlrunner/config.php');
+        $this->conn = \qtype_postgresqlrunner\security\connection_manager::get_connection(json_encode($config['db_connection']));
         $this->temp_prefix = 'temp_' . uniqid();
         
+        $result = \qtype_postgresqlrunner\security\connection_manager::safe_execute_query($this->conn, 'BEGIN');
         $result = \qtype_postgresqlrunner\security\connection_manager::safe_execute_query($this->conn, 'BEGIN');
         if (!$result) {
             throw new Exception('Не удалось начать транзакцию: ' . pg_last_error($this->conn));

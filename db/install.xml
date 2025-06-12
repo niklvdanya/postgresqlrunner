@@ -10,7 +10,6 @@
         <FIELD NAME="questionid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Foreign key references question.id"/>
         <FIELD NAME="sqlcode" TYPE="text" NOTNULL="true" SEQUENCE="false" COMMENT="The sample SQL code that provides the correct answer"/>
         <FIELD NAME="expected_result" TYPE="text" NOTNULL="true" SEQUENCE="false" COMMENT="The expected result in JSON format"/>
-        <FIELD NAME="db_connection" TYPE="text" NOTNULL="true" SEQUENCE="false" COMMENT="Database connection settings in JSON format"/>
         <FIELD NAME="template" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Template code provided to students"/>
         <FIELD NAME="grading_type" TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="exact" SEQUENCE="false" COMMENT="Grading type: exact or partial"/>
         <FIELD NAME="case_sensitive" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Whether to use case-sensitive comparison"/>

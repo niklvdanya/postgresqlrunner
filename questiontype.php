@@ -10,7 +10,6 @@ class qtype_postgresqlrunner extends question_type {
         return array('qtype_postgresqlrunner_options', 
                     'sqlcode', 
                     'expected_result', 
-                    'db_connection', 
                     'template', 
                     'grading_type',
                     'case_sensitive',
@@ -44,7 +43,6 @@ class qtype_postgresqlrunner extends question_type {
             $options->questionid = $question->id;
             $options->sqlcode = $question->sqlcode;
             $options->expected_result = $question->expected_result;
-            $options->db_connection = $question->db_connection;
             $options->template = isset($question->template) ? $question->template : '';
             $options->grading_type = isset($question->grading_type) ? $question->grading_type : 'exact';
             $options->case_sensitive = isset($question->case_sensitive) ? $question->case_sensitive : 0;
@@ -54,7 +52,6 @@ class qtype_postgresqlrunner extends question_type {
         } else {
             $options->sqlcode = $question->sqlcode;
             $options->expected_result = $question->expected_result;
-            $options->db_connection = $question->db_connection;
             $options->template = isset($question->template) ? $question->template : '';
             $options->grading_type = isset($question->grading_type) ? $question->grading_type : 'exact';
             $options->case_sensitive = isset($question->case_sensitive) ? $question->case_sensitive : 0;
@@ -79,7 +76,6 @@ class qtype_postgresqlrunner extends question_type {
         
         $question->sqlcode = $question->options->sqlcode;
         $question->expected_result = $question->options->expected_result;
-        $question->db_connection = $question->options->db_connection;
         $question->template = $question->options->template;
         $question->grading_type = $question->options->grading_type;
         $question->case_sensitive = $question->options->case_sensitive;
@@ -109,12 +105,6 @@ class qtype_postgresqlrunner extends question_type {
 
         $question->sqlcode = $format->getpath($data, array('#', 'sqlcode', 0, '#'), '');
         $question->expected_result = $format->getpath($data, array('#', 'expected_result', 0, '#'), '');
-        
-        $db_connection = $format->getpath($data, array('#', 'db_connection', 0, '#'), '');
-        if (!empty($db_connection)) {
-            $question->db_connection = $db_connection;
-        }
-        
         $question->template = $format->getpath($data, array('#', 'template', 0, '#'), '');
         $question->grading_type = $format->getpath($data, array('#', 'grading_type', 0, '#'), 'exact');
         $question->case_sensitive = $format->getpath($data, array('#', 'case_sensitive', 0, '#'), 0);
@@ -128,7 +118,6 @@ class qtype_postgresqlrunner extends question_type {
 
         $output .= '    <sqlcode>' . $format->writetext($question->options->sqlcode) . "</sqlcode>\n";
         $output .= '    <expected_result>' . $format->writetext($question->options->expected_result) . "</expected_result>\n";
-        $output .= '    <db_connection>' . $format->writetext($question->options->db_connection) . "</db_connection>\n";
         $output .= '    <template>' . $format->writetext($question->options->template) . "</template>\n";
         $output .= '    <grading_type>' . $format->writetext($question->options->grading_type) . "</grading_type>\n";
         $output .= '    <case_sensitive>' . $question->options->case_sensitive . "</case_sensitive>\n";

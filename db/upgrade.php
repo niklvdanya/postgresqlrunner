@@ -42,5 +42,15 @@ function xmldb_qtype_postgresqlrunner_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2025050301, 'qtype', 'postgresqlrunner');
     }
     
+    if ($oldversion < 2025061207) {
+        $table = new xmldb_table('qtype_postgresqlrunner_options');
+        if ($dbman->field_exists($table, 'db_connection')) {
+            $field = new xmldb_field('db_connection');
+            $dbman->drop_field($table, $field);
+        }
+        
+        upgrade_plugin_savepoint(true, 2025061207, 'qtype', 'postgresqlrunner');
+    }
+    
     return true;
 }

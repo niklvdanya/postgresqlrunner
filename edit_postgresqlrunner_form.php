@@ -24,13 +24,6 @@ class qtype_postgresqlrunner_edit_form extends question_edit_form {
         $mform->setType('expected_result', PARAM_RAW);
         $mform->addHelpButton('expected_result', 'expectedresult', 'qtype_postgresqlrunner');
     
-        $mform->addElement('textarea', 'db_connection', get_string('dbconnection', 'qtype_postgresqlrunner'),
-                           array('rows' => 5, 'cols' => 80, 'class' => 'text-monospace'));
-        $mform->setType('db_connection', PARAM_RAW);
-        $mform->addRule('db_connection', null, 'required', null, 'client');
-        $mform->addHelpButton('db_connection', 'dbconnection', 'qtype_postgresqlrunner');
-        $mform->setDefault('db_connection', '{"host": "localhost", "dbname": "postgres", "user": "postgres", "password": "postgres", "port": 5432}');
-    
         $mform->addElement('textarea', 'template', get_string('template', 'qtype_postgresqlrunner'),
                            array('rows' => 10, 'cols' => 80, 'class' => 'text-monospace'));
         $mform->setType('template', PARAM_RAW);
@@ -57,31 +50,6 @@ class qtype_postgresqlrunner_edit_form extends question_edit_form {
     
     public function validation($data, $files) {
         $errors = parent::validation($data, $files);
-        
-        if (!empty($data['db_connection'])) {
-            $db_connection = $data['db_connection'];
-            if (!$this->is_valid_json($db_connection)) {
-                $errors['db_connection'] = get_string('invalidjson', 'qtype_postgresqlrunner');
-            } else {
-                $db_data = json_decode($db_connection, true);
-                if (!isset($db_data['host']) || !isset($db_data['dbname']) || !isset($db_data['user']) || !isset($db_data['password'])) {
-                    $errors['db_connection'] = get_string('invaliddbconnection', 'qtype_postgresqlrunner');
-                } else {
-                    if (!filter_var($db_data['host'], FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) &&
-                        !filter_var($db_data['host'], FILTER_VALIDATE_IP)) {
-                        $errors['db_connection'] = 'Некорректный адрес хоста базы данных';
-                    }
-                    
-                    if (isset($db_data['port'])) {
-                        $port = (int)$db_data['port'];
-                        if ($port < 1 || $port > 65535) {
-                            $errors['db_connection'] = 'Некорректный порт базы данных';
-                        }
-                    }
-                }
-            }
-        }
-        
         return $errors;
     }
 
@@ -94,18 +62,11 @@ class qtype_postgresqlrunner_edit_form extends question_edit_form {
         
         $question->sqlcode = $question->options->sqlcode;
         $question->expected_result = $question->options->expected_result;
-        $question->db_connection = $question->options->db_connection;
         $question->template = $question->options->template;
         $question->grading_type = $question->options->grading_type;
         $question->case_sensitive = $question->options->case_sensitive;
         $question->allow_ordering_difference = $question->options->allow_ordering_difference;
         
         return $question;
-    }
-    
-    
-    private function is_valid_json($string) {
-        json_decode($string);
-        return (json_last_error() == JSON_ERROR_NONE);
     }
 }

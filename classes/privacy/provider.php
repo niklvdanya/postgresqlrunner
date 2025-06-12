@@ -22,7 +22,6 @@ class provider implements
                 'questionid' => 'privacy:metadata:qtype_postgresqlrunner_options:questionid',
                 'sqlcode' => 'privacy:metadata:qtype_postgresqlrunner_options:sqlcode',
                 'expected_result' => 'privacy:metadata:qtype_postgresqlrunner_options:expected_result',
-                'db_connection' => 'privacy:metadata:qtype_postgresqlrunner_options:db_connection',
                 'template' => 'privacy:metadata:qtype_postgresqlrunner_options:template',
                 'grading_type' => 'privacy:metadata:qtype_postgresqlrunner_options:grading_type',
                 'case_sensitive' => 'privacy:metadata:qtype_postgresqlrunner_options:case_sensitive',

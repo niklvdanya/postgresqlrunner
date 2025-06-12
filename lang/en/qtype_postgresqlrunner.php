@@ -15,8 +15,6 @@ $string['expectedresult'] = 'Expected Result';
 $string['expectedresult_help'] = 'Enter the expected result in JSON format. The format should be: {"fields": ["field1", "field2", ...], "data": [{"field1": "value1", "field2": "value2", ...}, ...]}';
 $string['additionalinfo'] = 'Additional information';
 $string['additionalinfo_help'] = 'Optional field for additional information or explanation about the query.';
-$string['dbconnection'] = 'Database Connection';
-$string['dbconnection_help'] = 'Enter the database connection settings in JSON format. The format should be: {"host": "localhost", "dbname": "postgres", "user": "postgres", "password": "password", "port": 5432}';
 $string['template'] = 'Code Template';
 $string['template_help'] = 'Enter a code template that will be provided to students as a starting point for their answer.';
 $string['gradingtype'] = 'Grading Type';
@@ -36,7 +34,6 @@ $string['yourresult'] = 'Your result:';
 $string['expectedresult_display'] = 'Expected result:';
 $string['correctanswer'] = 'A correct answer would be: {$a}';
 $string['invalidjson'] = 'Invalid JSON format';
-$string['invaliddbconnection'] = 'Invalid database connection settings. Required fields: host, dbname, user';
 
 $string['queryerror'] = 'Query error';
 $string['yourtablestate'] = 'State of the table after your query';

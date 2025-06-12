@@ -19,11 +19,6 @@ class qtype_postgresqlrunner_edit_form extends question_edit_form {
         $mform->addRule('sqlcode', null, 'required', null, 'client');
         $mform->addHelpButton('sqlcode', 'sqlcode', 'qtype_postgresqlrunner');
     
-        $mform->addElement('textarea', 'expected_result', get_string('expectedresult', 'qtype_postgresqlrunner'),
-                           array('rows' => 5, 'cols' => 80, 'class' => 'text-monospace'));
-        $mform->setType('expected_result', PARAM_RAW);
-        $mform->addHelpButton('expected_result', 'expectedresult', 'qtype_postgresqlrunner');
-    
         $mform->addElement('textarea', 'template', get_string('template', 'qtype_postgresqlrunner'),
                            array('rows' => 10, 'cols' => 80, 'class' => 'text-monospace'));
         $mform->setType('template', PARAM_RAW);

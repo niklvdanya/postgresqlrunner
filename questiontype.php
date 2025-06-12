@@ -42,7 +42,7 @@ class qtype_postgresqlrunner extends question_type {
             $options = new stdClass();
             $options->questionid = $question->id;
             $options->sqlcode = $question->sqlcode;
-            $options->expected_result = $question->expected_result;
+            $options->expected_result = isset($question->expected_result) ? $question->expected_result : '{}';
             $options->template = isset($question->template) ? $question->template : '';
             $options->grading_type = isset($question->grading_type) ? $question->grading_type : 'exact';
             $options->case_sensitive = isset($question->case_sensitive) ? $question->case_sensitive : 0;
@@ -51,7 +51,7 @@ class qtype_postgresqlrunner extends question_type {
             $options->id = $DB->insert_record('qtype_postgresqlrunner_options', $options);
         } else {
             $options->sqlcode = $question->sqlcode;
-            $options->expected_result = $question->expected_result;
+            $options->expected_result = isset($question->expected_result) ? $question->expected_result : '{}';
             $options->template = isset($question->template) ? $question->template : '';
             $options->grading_type = isset($question->grading_type) ? $question->grading_type : 'exact';
             $options->case_sensitive = isset($question->case_sensitive) ? $question->case_sensitive : 0;
@@ -104,7 +104,7 @@ class qtype_postgresqlrunner extends question_type {
         $format->import_hints($question, $data, true);
 
         $question->sqlcode = $format->getpath($data, array('#', 'sqlcode', 0, '#'), '');
-        $question->expected_result = $format->getpath($data, array('#', 'expected_result', 0, '#'), '');
+        $question->expected_result = $format->getpath($data, array('#', 'expected_result', 0, '#'), '{}');
         $question->template = $format->getpath($data, array('#', 'template', 0, '#'), '');
         $question->grading_type = $format->getpath($data, array('#', 'grading_type', 0, '#'), 'exact');
         $question->case_sensitive = $format->getpath($data, array('#', 'case_sensitive', 0, '#'), 0);

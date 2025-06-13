@@ -166,26 +166,54 @@ class connection_manager {
     }
     
     public static function cleanup_resources($conn, $user_id, $question_id) {
-        pg_query($conn, "RESET ROLE");
-        
-        $role_pattern = 'student_' . $user_id . '_q' . $question_id . '_%';
-        $role_result = pg_query_params($conn, 
-            "SELECT rolname FROM pg_roles WHERE rolname LIKE $1", 
-            array($role_pattern)
-        );
-        
-        if ($role_result) {
-            while ($row = pg_fetch_assoc($role_result)) {
-                $role_name = $row['rolname'];
-                $drop_role = "DROP ROLE IF EXISTS " . pg_escape_identifier($conn, $role_name);
-                pg_query($conn, $drop_role);
-            }
-            pg_free_result($role_result);
+        if (!isset($conn) || pg_connection_status($conn) !== PGSQL_CONNECTION_OK) {
+            self::log_security_event('cleanup_error', 'Invalid or closed database connection during cleanup', 'warning');
+            return;
         }
-        
-        $schema_name = 'student_' . $user_id . '_q' . $question_id;
-        $drop_schema = "DROP SCHEMA IF EXISTS " . pg_escape_identifier($conn, $schema_name) . " CASCADE";
-        pg_query($conn, $drop_schema);
+
+        try {
+            $result = pg_query($conn, "RESET ROLE");
+            if (!$result) {
+                self::log_security_event('cleanup_error', 'Failed to reset role: ' . pg_last_error($conn), 'error');
+            } else {
+                pg_free_result($result);
+            }
+
+            $role_pattern = 'student_' . $user_id . '_q' . $question_id . '_%';
+            $role_result = pg_query_params($conn, 
+                "SELECT rolname FROM pg_roles WHERE rolname LIKE $1", 
+                array($role_pattern)
+            );
+
+            if ($role_result) {
+                while ($row = pg_fetch_assoc($role_result)) {
+                    $role_name = $row['rolname'];
+                    $drop_role = "DROP ROLE IF EXISTS " . pg_escape_identifier($conn, $role_name);
+                    $drop_result = pg_query($conn, $drop_role);
+                    if (!$drop_result) {
+                        self::log_security_event('cleanup_error', 'Failed to drop role ' . $role_name . ': ' . pg_last_error($conn), 'error');
+                    } else {
+                        pg_free_result($drop_result);
+                    }
+                }
+                pg_free_result($role_result);
+            }
+
+            $schema_name = 'student_' . $user_id . '_q' . $question_id;
+            $drop_schema = "DROP SCHEMA IF EXISTS " . pg_escape_identifier($conn, $schema_name) . " CASCADE";
+            $drop_result = pg_query($conn, $drop_schema);
+            if (!$drop_result) {
+                self::log_security_event('cleanup_error', 'Failed to drop schema ' . $schema_name . ': ' . pg_last_error($conn), 'error');
+            } else {
+                pg_free_result($drop_result);
+            }
+
+            if (pg_connection_status($conn) === PGSQL_CONNECTION_OK) {
+                pg_close($conn);
+            }
+        } catch (\Exception $e) {
+            self::log_security_event('cleanup_error', 'Exception during cleanup: ' . $e->getMessage(), 'error');
+        }
     }
     
     private static function build_connection_string($params) {

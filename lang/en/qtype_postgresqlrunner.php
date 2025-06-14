@@ -11,6 +11,10 @@ $string['pluginnamesummary'] = 'A question type that allows students to write Po
 $string['sqlheader'] = 'SQL settings';
 $string['sqlcode'] = 'SQL Code';
 $string['sqlcode_help'] = 'Enter the sample SQL code that provides the correct answer to the question.';
+$string['validatesql']      = 'Validate SQL';
+$string['validatesqlok']    = 'SQL looks good ✔️';
+$string['validatesqlfail']  = 'Error: {$a}';
+
 $string['additionalinfo'] = 'Additional information';
 $string['additionalinfo_help'] = 'Optional field for additional information or explanation about the query.';
 $string['template'] = 'Code Template';

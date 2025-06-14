@@ -18,6 +18,22 @@ class qtype_postgresqlrunner_edit_form extends question_edit_form {
         $mform->setType('sqlcode', PARAM_RAW);
         $mform->addRule('sqlcode', null, 'required', null, 'client');
         $mform->addHelpButton('sqlcode', 'sqlcode', 'qtype_postgresqlrunner');
+        $mform->addElement('button', 'validatesql',
+            get_string('validatesql', 'qtype_postgresqlrunner'),
+            ['type' => 'button', 'class' => 'btn btn-secondary', 'id' => 'validate-sql']);
+
+        $mform->addElement('static', 'validatesqlmsg', '', html_writer::tag(
+            'div', '', ['id' => 'validate-sql-msg']));
+
+        global $PAGE;
+        $PAGE->requires->jquery();
+        
+        $PAGE->requires->strings_for_js(
+            ['validatesqlok', 'validatesqlfail'],   
+            'qtype_postgresqlrunner'                
+        );
+        $PAGE->requires->js(new moodle_url(
+            '/question/type/postgresqlrunner/validate_sql.js'), true);
     
         $mform->addElement('textarea', 'template', get_string('template', 'qtype_postgresqlrunner'),
                            array('rows' => 10, 'cols' => 80, 'class' => 'text-monospace'));
@@ -44,9 +60,17 @@ class qtype_postgresqlrunner_edit_form extends question_edit_form {
     }
     
     public function validation($data, $files) {
+        global $CFG;                
         $errors = parent::validation($data, $files);
+
+        try {
+            \qtype_postgresqlrunner\security\sql_validator::validate_sql($data['sqlcode']);
+        } catch (Exception $e) {
+            $errors['sqlcode'] = $e->getMessage();   
+        }
         return $errors;
     }
+
 
     protected function data_preprocessing($question) {
         $question = parent::data_preprocessing($question);

@@ -10,6 +10,7 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
     public $sqlcode;
     public $expected_result;
     public $template;
+    public $environment_init;
     public $grading_type;
     public $case_sensitive;
     public $allow_ordering_difference;
@@ -82,6 +83,18 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
             throw new Exception('Не удалось начать транзакцию: ' . pg_last_error($this->conn));
         }
         pg_free_result($result);
+        
+        if (!empty($this->environment_init)) {
+            try {
+                \qtype_postgresqlrunner\security\sql_validator::validate_sql($this->environment_init);
+                $init_result = \qtype_postgresqlrunner\security\connection_manager::safe_execute_query($this->conn, $this->environment_init);
+                if ($init_result) {
+                    pg_free_result($init_result);
+                }
+            } catch (Exception $e) {
+                throw new Exception('Ошибка инициализации окружения: ' . $e->getMessage());
+            }
+        }
     }
 
     protected function cleanup_test_environment() {
@@ -224,6 +237,18 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
             throw new Exception('Не удалось начать новую транзакцию: ' . pg_last_error($this->conn));
         }
         pg_free_result($result);
+        
+        if (!empty($this->environment_init)) {
+            try {
+                \qtype_postgresqlrunner\security\sql_validator::validate_sql($this->environment_init);
+                $init_result = \qtype_postgresqlrunner\security\connection_manager::safe_execute_query($this->conn, $this->environment_init);
+                if ($init_result) {
+                    pg_free_result($init_result);
+                }
+            } catch (Exception $e) {
+                throw new Exception('Ошибка инициализации окружения после rollback: ' . $e->getMessage());
+            }
+        }
         
         foreach ($snapshots_before as $table => $state) {
             $this->restore_table_state($table, $state);

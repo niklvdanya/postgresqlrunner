@@ -39,6 +39,11 @@ class qtype_postgresqlrunner_edit_form extends question_edit_form {
                            array('rows' => 10, 'cols' => 80, 'class' => 'text-monospace'));
         $mform->setType('template', PARAM_RAW);
         $mform->addHelpButton('template', 'template', 'qtype_postgresqlrunner');
+
+        $mform->addElement('textarea', 'environment_init', get_string('environmentinit', 'qtype_postgresqlrunner'),
+                           array('rows' => 8, 'cols' => 80, 'class' => 'text-monospace'));
+        $mform->setType('environment_init', PARAM_RAW);
+        $mform->addHelpButton('environment_init', 'environmentinit', 'qtype_postgresqlrunner');
     
         $gradingtypes = array(
             'exact' => get_string('gradingtypeexact', 'qtype_postgresqlrunner'),
@@ -82,6 +87,7 @@ class qtype_postgresqlrunner_edit_form extends question_edit_form {
         $question->sqlcode = $question->options->sqlcode;
         $question->expected_result = $question->options->expected_result;
         $question->template = $question->options->template;
+        $question->environment_init = $question->options->environment_init;
         $question->grading_type = $question->options->grading_type;
         $question->case_sensitive = $question->options->case_sensitive;
         $question->allow_ordering_difference = $question->options->allow_ordering_difference;

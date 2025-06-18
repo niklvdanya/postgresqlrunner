@@ -10,6 +10,7 @@ require_login();
 header('Content-Type: application/json');
 
 $sql = required_param('sql', PARAM_RAW);   
+$environment_init = optional_param('environment_init', '', PARAM_RAW);
 
 try {
     require_once($CFG->dirroot .
@@ -19,6 +20,10 @@ try {
 
     \qtype_postgresqlrunner\security\sql_validator::validate_sql($sql);
 
+    if (!empty($environment_init)) {
+        \qtype_postgresqlrunner\security\sql_validator::validate_sql($environment_init);
+    }
+
     $config  = require($CFG->dirroot .
         '/question/type/postgresqlrunner/config.php');
 
@@ -26,6 +31,11 @@ try {
                 json_encode($config['db_connection']));
 
     \qtype_postgresqlrunner\security\connection_manager::safe_execute_query($conn, 'BEGIN');
+    
+    if (!empty($environment_init)) {
+        \qtype_postgresqlrunner\security\connection_manager::safe_execute_query($conn, $environment_init);
+    }
+    
     \qtype_postgresqlrunner\security\connection_manager::safe_execute_query($conn, $sql);
     \qtype_postgresqlrunner\security\connection_manager::safe_execute_query($conn, 'ROLLBACK');
     pg_close($conn);

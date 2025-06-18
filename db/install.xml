@@ -14,6 +14,7 @@
         <FIELD NAME="grading_type" TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="exact" SEQUENCE="false" COMMENT="Grading type: exact or partial"/>
         <FIELD NAME="case_sensitive" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Whether to use case-sensitive comparison"/>
         <FIELD NAME="allow_ordering_difference" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Whether to allow different ordering of results"/>
+        <FIELD NAME="environment_init" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="SQL code for environment initialization (creating tables, inserting data, etc.)"/>
       </FIELDS>
       <KEYS>
         <KEY NAME="primary" TYPE="primary" FIELDS="id"/>

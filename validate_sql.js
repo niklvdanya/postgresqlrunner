@@ -3,6 +3,7 @@
 
         const btn  = document.getElementById('validate-sql');
         const area = document.querySelector('textarea[name="sqlcode"]');
+        const envArea = document.querySelector('textarea[name="environment_init"]');
         const box  = document.getElementById('validate-sql-msg');
 
         if (!btn || !area || !box) { return; }
@@ -18,8 +19,9 @@
                     'Content-Type': 'application/x-www-form-urlencoded'
                 },
                 body: new URLSearchParams({
-                    sql:     area.value,
-                    sesskey: M.cfg.sesskey
+                    sql:             area.value,
+                    environment_init: envArea ? envArea.value : '',
+                    sesskey:         M.cfg.sesskey
                 })
             })
             .then(resp => resp.json())

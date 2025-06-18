@@ -4,6 +4,7 @@
         const btn  = document.getElementById('validate-sql');
         const area = document.querySelector('textarea[name="sqlcode"]');
         const envArea = document.querySelector('textarea[name="environment_init"]');
+        const extraArea = document.querySelector('textarea[name="extra_code"]');
         const box  = document.getElementById('validate-sql-msg');
 
         if (!btn || !area || !box) { return; }
@@ -21,6 +22,7 @@
                 body: new URLSearchParams({
                     sql:             area.value,
                     environment_init: envArea ? envArea.value : '',
+                    extra_code:      extraArea ? extraArea.value : '',
                     sesskey:         M.cfg.sesskey
                 })
             })
@@ -46,4 +48,3 @@
         });
     });
 })();
-

@@ -12,6 +12,7 @@ class qtype_postgresqlrunner extends question_type {
                     'expected_result', 
                     'template', 
                     'environment_init',
+                    'extra_code',
                     'grading_type',
                     'case_sensitive',
                     'allow_ordering_difference');
@@ -46,6 +47,7 @@ class qtype_postgresqlrunner extends question_type {
             $options->expected_result = isset($question->expected_result) ? $question->expected_result : '{}';
             $options->template = isset($question->template) ? $question->template : '';
             $options->environment_init = isset($question->environment_init) ? $question->environment_init : '';
+            $options->extra_code = isset($question->extra_code) ? $question->extra_code : '';
             $options->grading_type = isset($question->grading_type) ? $question->grading_type : 'exact';
             $options->case_sensitive = isset($question->case_sensitive) ? $question->case_sensitive : 0;
             $options->allow_ordering_difference = isset($question->allow_ordering_difference) ? $question->allow_ordering_difference : 0;
@@ -56,6 +58,7 @@ class qtype_postgresqlrunner extends question_type {
             $options->expected_result = isset($question->expected_result) ? $question->expected_result : '{}';
             $options->template = isset($question->template) ? $question->template : '';
             $options->environment_init = isset($question->environment_init) ? $question->environment_init : '';
+            $options->extra_code = isset($question->extra_code) ? $question->extra_code : '';
             $options->grading_type = isset($question->grading_type) ? $question->grading_type : 'exact';
             $options->case_sensitive = isset($question->case_sensitive) ? $question->case_sensitive : 0;
             $options->allow_ordering_difference = isset($question->allow_ordering_difference) ? $question->allow_ordering_difference : 0;
@@ -81,6 +84,7 @@ class qtype_postgresqlrunner extends question_type {
         $question->expected_result = $question->options->expected_result;
         $question->template = $question->options->template;
         $question->environment_init = $question->options->environment_init;
+        $question->extra_code = $question->options->extra_code;
         $question->grading_type = $question->options->grading_type;
         $question->case_sensitive = $question->options->case_sensitive;
         $question->allow_ordering_difference = $question->options->allow_ordering_difference;
@@ -111,6 +115,7 @@ class qtype_postgresqlrunner extends question_type {
         $question->expected_result = $format->getpath($data, array('#', 'expected_result', 0, '#'), '{}');
         $question->template = $format->getpath($data, array('#', 'template', 0, '#'), '');
         $question->environment_init = $format->getpath($data, array('#', 'environment_init', 0, '#'), '');
+        $question->extra_code = $format->getpath($data, array('#', 'extra_code', 0, '#'), '');
         $question->grading_type = $format->getpath($data, array('#', 'grading_type', 0, '#'), 'exact');
         $question->case_sensitive = $format->getpath($data, array('#', 'case_sensitive', 0, '#'), 0);
         $question->allow_ordering_difference = $format->getpath($data, array('#', 'allow_ordering_difference', 0, '#'), 0);
@@ -125,6 +130,7 @@ class qtype_postgresqlrunner extends question_type {
         $output .= '    <expected_result>' . $format->writetext($question->options->expected_result) . "</expected_result>\n";
         $output .= '    <template>' . $format->writetext($question->options->template) . "</template>\n";
         $output .= '    <environment_init>' . $format->writetext($question->options->environment_init) . "</environment_init>\n";
+        $output .= '    <extra_code>' . $format->writetext($question->options->extra_code) . "</extra_code>\n";
         $output .= '    <grading_type>' . $format->writetext($question->options->grading_type) . "</grading_type>\n";
         $output .= '    <case_sensitive>' . $question->options->case_sensitive . "</case_sensitive>\n";
         $output .= '    <allow_ordering_difference>' . $question->options->allow_ordering_difference . "</allow_ordering_difference>\n";

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="question/type/postgresqlrunner/db" VERSION="20250503" COMMENT="XMLDB file for PostgreSQL Runner question type"
+<XMLDB PATH="question/type/postgresqlrunner/db" VERSION="20250618" COMMENT="XMLDB file for PostgreSQL Runner question type"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:noNamespaceSchemaLocation="../../../../lib/xmldb/xmldb.xsd"
 >
@@ -15,6 +15,7 @@
         <FIELD NAME="case_sensitive" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Whether to use case-sensitive comparison"/>
         <FIELD NAME="allow_ordering_difference" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Whether to allow different ordering of results"/>
         <FIELD NAME="environment_init" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="SQL code for environment initialization (creating tables, inserting data, etc.)"/>
+        <FIELD NAME="extra_code" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Additional SELECT query to execute after main code for grading"/>
       </FIELDS>
       <KEYS>
         <KEY NAME="primary" TYPE="primary" FIELDS="id"/>

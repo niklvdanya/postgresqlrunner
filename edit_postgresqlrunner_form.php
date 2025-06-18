@@ -44,6 +44,11 @@ class qtype_postgresqlrunner_edit_form extends question_edit_form {
                            array('rows' => 8, 'cols' => 80, 'class' => 'text-monospace'));
         $mform->setType('environment_init', PARAM_RAW);
         $mform->addHelpButton('environment_init', 'environmentinit', 'qtype_postgresqlrunner');
+
+        $mform->addElement('textarea', 'extra_code', get_string('extracode', 'qtype_postgresqlrunner'),
+                           array('rows' => 8, 'cols' => 80, 'class' => 'text-monospace'));
+        $mform->setType('extra_code', PARAM_RAW);
+        $mform->addHelpButton('extra_code', 'extracode', 'qtype_postgresqlrunner');
     
         $gradingtypes = array(
             'exact' => get_string('gradingtypeexact', 'qtype_postgresqlrunner'),
@@ -73,9 +78,20 @@ class qtype_postgresqlrunner_edit_form extends question_edit_form {
         } catch (Exception $e) {
             $errors['sqlcode'] = $e->getMessage();   
         }
+
+        if (!empty($data['extra_code'])) {
+            try {
+                \qtype_postgresqlrunner\security\sql_validator::validate_sql($data['extra_code']);
+                if (stripos(trim($data['extra_code']), 'SELECT') !== 0) {
+                    $errors['extra_code'] = get_string('extracodemustselect', 'qtype_postgresqlrunner');
+                }
+            } catch (Exception $e) {
+                $errors['extra_code'] = $e->getMessage();
+            }
+        }
+
         return $errors;
     }
-
 
     protected function data_preprocessing($question) {
         $question = parent::data_preprocessing($question);
@@ -88,6 +104,7 @@ class qtype_postgresqlrunner_edit_form extends question_edit_form {
         $question->expected_result = $question->options->expected_result;
         $question->template = $question->options->template;
         $question->environment_init = $question->options->environment_init;
+        $question->extra_code = $question->options->extra_code;
         $question->grading_type = $question->options->grading_type;
         $question->case_sensitive = $question->options->case_sensitive;
         $question->allow_ordering_difference = $question->options->allow_ordering_difference;

@@ -109,13 +109,13 @@ class qtype_postgresqlrunner_edit_form extends question_edit_form {
                 if (json_last_error() !== JSON_ERROR_NONE) {
                     $errors['question_bank'] = get_string('invalidjson', 'qtype_postgresqlrunner');
                 } else {
+                    $question = $this->_customdata['question'] ?? new qtype_postgresqlrunner_question();
                     foreach ($question_bank as $task) {
                         if (!isset($task['sqlcode']) || !isset($task['questiontext'])) {
                             $errors['question_bank'] = get_string('invalidquestionbankformat', 'qtype_postgresqlrunner');
                             break;
                         }
                         try {
-                            $question = $this->_customdata['question'];
                             $validated_sql = $question->get_validated_sqlcode($task['sqlcode'], $data['question_bank']);
                             \qtype_postgresqlrunner\security\sql_validator::validate_sql($validated_sql);
                         } catch (Exception $e) {

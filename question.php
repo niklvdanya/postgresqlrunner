@@ -27,7 +27,20 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
         if ($this->use_question_bank && !empty($this->question_bank)) {
             $question_bank = json_decode($this->question_bank, true);
             if (!empty($question_bank)) {
-                $this->selected_task = $question_bank[array_rand($question_bank)];
+                $base_task = $question_bank[array_rand($question_bank)];
+                $this->selected_task = $base_task;
+                if (isset($base_task['randomization'])) {
+                    foreach ($base_task['randomization'] as $param => $config) {
+                        if ($config['type'] === 'range' && isset($config['min']) && isset($config['max'])) {
+                            $value = rand($config['min'], $config['max']);
+                            $this->selected_task['parameters'][$param] = $value;
+                        } elseif ($config['type'] === 'list' && isset($config['options']) && is_array($config['options'])) {
+                            $value = $config['options'][array_rand($config['options'])];
+                            $this->selected_task['parameters'][$param] = $value;
+                        }
+                    }
+                }
+                
                 $this->sqlcode = $this->get_processed_sqlcode($this->selected_task['sqlcode']);
                 $step->set_qt_var('_selected_task', json_encode($this->selected_task));
             }

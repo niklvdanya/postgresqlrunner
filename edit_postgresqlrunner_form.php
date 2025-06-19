@@ -115,7 +115,9 @@ class qtype_postgresqlrunner_edit_form extends question_edit_form {
                             break;
                         }
                         try {
-                            \qtype_postgresqlrunner\security\sql_validator::validate_sql($task['sqlcode']);
+                            $question = $this->_customdata['question'];
+                            $validated_sql = $question->get_validated_sqlcode($task['sqlcode'], $data['question_bank']);
+                            \qtype_postgresqlrunner\security\sql_validator::validate_sql($validated_sql);
                         } catch (Exception $e) {
                             $errors['question_bank'] = get_string('invalidquestionbanksql', 'qtype_postgresqlrunner') . ': ' . $e->getMessage();
                             break;

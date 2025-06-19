@@ -82,6 +82,40 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
         return $raw_sqlcode;
     }
 
+    public function get_validated_sqlcode($raw_sqlcode, $question_bank) {
+        if (empty($question_bank)) {
+            return $raw_sqlcode;
+        }
+
+        $tasks = json_decode($question_bank, true);
+        if (empty($tasks)) {
+            return $raw_sqlcode;
+        }
+
+        $sqlcode = $raw_sqlcode;
+        foreach ($tasks as $task) {
+            if (isset($task['randomization'])) {
+                foreach ($task['randomization'] as $param => $config) {
+                    if ($config['type'] === 'range' && isset($config['min']) && isset($config['max'])) {
+                        $value = rand($config['min'], $config['max']);
+                        if (!is_numeric($value)) {
+                            $value = "'" . addslashes($value) . "'";
+                        }
+                        $sqlcode = str_replace("{{{$param}}}", $value, $sqlcode);
+                    } elseif ($config['type'] === 'list' && isset($config['options']) && is_array($config['options'])) {
+                        $value = $config['options'][array_rand($config['options'])];
+                        if (!is_numeric($value)) {
+                            $value = "'" . addslashes($value) . "'";
+                        }
+                        $sqlcode = str_replace("{{{$param}}}", $value, $sqlcode);
+                    }
+                }
+            }
+        }
+
+        return $sqlcode;
+    }
+
     public function get_expected_data() {
         return array('answer' => PARAM_RAW);
     }

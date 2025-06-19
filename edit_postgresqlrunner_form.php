@@ -13,18 +13,26 @@ class qtype_postgresqlrunner_edit_form extends question_edit_form {
     protected function definition_inner($mform) {
         $mform->addElement('header', 'sqlheader', get_string('sqlheader', 'qtype_postgresqlrunner'));
     
+        $mform->addElement('checkbox', 'use_question_bank', get_string('usequestionbank', 'qtype_postgresqlrunner'));
+        $mform->addHelpButton('use_question_bank', 'usequestionbank', 'qtype_postgresqlrunner');
+    
         $mform->addElement('textarea', 'sqlcode', get_string('sqlcode', 'qtype_postgresqlrunner'),
                            array('rows' => 10, 'cols' => 80, 'class' => 'postgresqlrunner text-monospace'));
         $mform->setType('sqlcode', PARAM_RAW);
-        $mform->addRule('sqlcode', null, 'required', null, 'client');
         $mform->addHelpButton('sqlcode', 'sqlcode', 'qtype_postgresqlrunner');
+    
+        $mform->addElement('textarea', 'question_bank', get_string('questionbank', 'qtype_postgresqlrunner'),
+                           array('rows' => 10, 'cols' => 80, 'class' => 'text-monospace'));
+        $mform->setType('question_bank', PARAM_RAW);
+        $mform->addHelpButton('question_bank', 'questionbank', 'qtype_postgresqlrunner');
+    
         $mform->addElement('button', 'validatesql',
             get_string('validatesql', 'qtype_postgresqlrunner'),
             ['type' => 'button', 'class' => 'btn btn-secondary', 'id' => 'validate-sql']);
-
+    
         $mform->addElement('static', 'validatesqlmsg', '', html_writer::tag(
             'div', '', ['id' => 'validate-sql-msg']));
-
+    
         global $PAGE;
         $PAGE->requires->jquery();
         
@@ -39,12 +47,12 @@ class qtype_postgresqlrunner_edit_form extends question_edit_form {
                            array('rows' => 10, 'cols' => 80, 'class' => 'text-monospace'));
         $mform->setType('template', PARAM_RAW);
         $mform->addHelpButton('template', 'template', 'qtype_postgresqlrunner');
-
+    
         $mform->addElement('textarea', 'environment_init', get_string('environmentinit', 'qtype_postgresqlrunner'),
                            array('rows' => 8, 'cols' => 80, 'class' => 'text-monospace'));
         $mform->setType('environment_init', PARAM_RAW);
         $mform->addHelpButton('environment_init', 'environmentinit', 'qtype_postgresqlrunner');
-
+    
         $mform->addElement('textarea', 'extra_code', get_string('extracode', 'qtype_postgresqlrunner'),
                            array('rows' => 8, 'cols' => 80, 'class' => 'text-monospace'));
         $mform->setType('extra_code', PARAM_RAW);
@@ -67,18 +75,64 @@ class qtype_postgresqlrunner_edit_form extends question_edit_form {
         $mform->addHelpButton('allow_ordering_difference', 'alloworderingdifference', 'qtype_postgresqlrunner');
     
         $this->add_interactive_settings();
+    
+        $PAGE->requires->js_init_code("
+            document.getElementById('id_use_question_bank').addEventListener('change', function() {
+                var sqlcodeField = document.getElementById('id_sqlcode');
+                var questionBankField = document.getElementById('id_question_bank');
+                if (this.checked) {
+                    sqlcodeField.disabled = true;
+                    questionBankField.disabled = false;
+                } else {
+                    sqlcodeField.disabled = false;
+                    questionBankField.disabled = true;
+                }
+            });
+            // Trigger change event on page load to set initial state
+            document.getElementById('id_use_question_bank').dispatchEvent(new Event('change'));
+        ");
     }
     
     public function validation($data, $files) {
         global $CFG;                
         $errors = parent::validation($data, $files);
-
-        try {
-            \qtype_postgresqlrunner\security\sql_validator::validate_sql($data['sqlcode']);
-        } catch (Exception $e) {
-            $errors['sqlcode'] = $e->getMessage();   
+    
+        if (empty($data['use_question_bank']) && empty(trim($data['sqlcode']))) {
+            $errors['sqlcode'] = get_string('sqlcodeorquestionbankrequired', 'qtype_postgresqlrunner');
         }
-
+    
+        if (!empty($data['use_question_bank'])) {
+            if (empty(trim($data['question_bank']))) {
+                $errors['question_bank'] = get_string('questionbankrequired', 'qtype_postgresqlrunner');
+            } else {      
+                $question_bank = json_decode($data['question_bank'], true);
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    $errors['question_bank'] = get_string('invalidjson', 'qtype_postgresqlrunner');
+                } else {
+                    foreach ($question_bank as $task) {
+                        if (!isset($task['sqlcode']) || !isset($task['questiontext'])) {
+                            $errors['question_bank'] = get_string('invalidquestionbankformat', 'qtype_postgresqlrunner');
+                            break;
+                        }
+                        try {
+                            \qtype_postgresqlrunner\security\sql_validator::validate_sql($task['sqlcode']);
+                        } catch (Exception $e) {
+                            $errors['question_bank'] = get_string('invalidquestionbanksql', 'qtype_postgresqlrunner') . ': ' . $e->getMessage();
+                            break;
+                        }
+                    }
+                }
+            }
+        } else {
+            try {
+                if (!empty(trim($data['sqlcode']))) {
+                    \qtype_postgresqlrunner\security\sql_validator::validate_sql($data['sqlcode']);
+                }
+            } catch (Exception $e) {
+                $errors['sqlcode'] = $e->getMessage();   
+            }
+        }
+    
         if (!empty($data['extra_code'])) {
             try {
                 \qtype_postgresqlrunner\security\sql_validator::validate_sql($data['extra_code']);
@@ -89,10 +143,10 @@ class qtype_postgresqlrunner_edit_form extends question_edit_form {
                 $errors['extra_code'] = $e->getMessage();
             }
         }
-
+    
         return $errors;
     }
-
+    
     protected function data_preprocessing($question) {
         $question = parent::data_preprocessing($question);
         
@@ -101,6 +155,8 @@ class qtype_postgresqlrunner_edit_form extends question_edit_form {
         }
         
         $question->sqlcode = $question->options->sqlcode;
+        $question->question_bank = $question->options->question_bank;
+        $question->use_question_bank = $question->options->use_question_bank;
         $question->expected_result = $question->options->expected_result;
         $question->template = $question->options->template;
         $question->environment_init = $question->options->environment_init;

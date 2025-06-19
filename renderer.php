@@ -22,7 +22,14 @@ class qtype_postgresqlrunner_renderer extends qtype_renderer {
             $inputattributes['readonly'] = 'readonly';
         }
     
-        $questiontext = $question->format_questiontext($qa);
+        $questiontext = $question->format_text(
+            $question->get_question_text_with_placeholders(),
+            $question->questiontextformat,
+            $qa,
+            'question',
+            'questiontext',
+            0
+        );
         $placeholder = false;
         
         if (preg_match('~\[\[RESPONSE\]\]~', $questiontext)) {

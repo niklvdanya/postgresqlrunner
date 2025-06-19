@@ -9,6 +9,8 @@ class qtype_postgresqlrunner extends question_type {
     public function extra_question_fields() {
         return array('qtype_postgresqlrunner_options', 
                     'sqlcode', 
+                    'question_bank',
+                    'use_question_bank',
                     'expected_result', 
                     'template', 
                     'environment_init',
@@ -44,6 +46,8 @@ class qtype_postgresqlrunner extends question_type {
             $options = new stdClass();
             $options->questionid = $question->id;
             $options->sqlcode = $question->sqlcode;
+            $options->question_bank = isset($question->question_bank) ? $question->question_bank : '';
+            $options->use_question_bank = isset($question->use_question_bank) ? $question->use_question_bank : 0;
             $options->expected_result = isset($question->expected_result) ? $question->expected_result : '{}';
             $options->template = isset($question->template) ? $question->template : '';
             $options->environment_init = isset($question->environment_init) ? $question->environment_init : '';
@@ -55,6 +59,8 @@ class qtype_postgresqlrunner extends question_type {
             $options->id = $DB->insert_record('qtype_postgresqlrunner_options', $options);
         } else {
             $options->sqlcode = $question->sqlcode;
+            $options->question_bank = isset($question->question_bank) ? $question->question_bank : '';
+            $options->use_question_bank = isset($question->use_question_bank) ? $question->use_question_bank : 0;
             $options->expected_result = isset($question->expected_result) ? $question->expected_result : '{}';
             $options->template = isset($question->template) ? $question->template : '';
             $options->environment_init = isset($question->environment_init) ? $question->environment_init : '';
@@ -81,6 +87,8 @@ class qtype_postgresqlrunner extends question_type {
         }
         
         $question->sqlcode = $question->options->sqlcode;
+        $question->question_bank = $question->options->question_bank;
+        $question->use_question_bank = $question->options->use_question_bank;
         $question->expected_result = $question->options->expected_result;
         $question->template = $question->options->template;
         $question->environment_init = $question->options->environment_init;
@@ -112,6 +120,8 @@ class qtype_postgresqlrunner extends question_type {
         $format->import_hints($question, $data, true);
 
         $question->sqlcode = $format->getpath($data, array('#', 'sqlcode', 0, '#'), '');
+        $question->question_bank = $format->getpath($data, array('#', 'question_bank', 0, '#'), '');
+        $question->use_question_bank = $format->getpath($data, array('#', 'use_question_bank', 0, '#'), 0);
         $question->expected_result = $format->getpath($data, array('#', 'expected_result', 0, '#'), '{}');
         $question->template = $format->getpath($data, array('#', 'template', 0, '#'), '');
         $question->environment_init = $format->getpath($data, array('#', 'environment_init', 0, '#'), '');
@@ -127,6 +137,8 @@ class qtype_postgresqlrunner extends question_type {
         $output = parent::export_to_xml($question, $format, $extra);
 
         $output .= '    <sqlcode>' . $format->writetext($question->options->sqlcode) . "</sqlcode>\n";
+        $output .= '    <question_bank>' . $format->writetext($question->options->question_bank) . "</question_bank>\n";
+        $output .= '    <use_question_bank>' . $question->options->use_question_bank . "</use_question_bank>\n";
         $output .= '    <expected_result>' . $format->writetext($question->options->expected_result) . "</expected_result>\n";
         $output .= '    <template>' . $format->writetext($question->options->template) . "</template>\n";
         $output .= '    <environment_init>' . $format->writetext($question->options->environment_init) . "</environment_init>\n";

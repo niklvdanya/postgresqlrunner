@@ -11,9 +11,18 @@ $string['pluginnamesummary'] = 'Тип вопроса, который позво
 $string['sqlheader'] = 'Настройки SQL';
 $string['sqlcode'] = 'SQL-код';
 $string['sqlcode_help'] = 'Введите образец SQL-кода, который обеспечивает правильный ответ на вопрос.';
+$string['sqlcodeorquestionbankrequired'] = 'Необходимо указать либо SQL-код, либо банк вопросов.';
 $string['validatesql'] = 'Проверить SQL';
 $string['validatesqlok'] = 'SQL-код синтаксически корректен ✔️';
 $string['validatesqlfail'] = 'Ошибка: {$a}';
+
+$string['usequestionbank'] = 'Использовать банк вопросов';
+$string['usequestionbank_help'] = 'Включите, чтобы использовать банк вопросов с несколькими вариантами задач вместо одного SQL-кода.';
+$string['questionbank'] = 'Банк вопросов';
+$string['questionbank_help'] = 'Введите JSON-массив задач, каждая из которых содержит sqlcode, questiontext и необязательные параметры. Пример: [{"sqlcode": "SELECT * FROM employees WHERE salary > {{salary}}", "questiontext": "Найти сотрудников с зарплатой больше {{salary}}", "parameters": {"salary": 50000}}]';
+$string['questionbankrequired'] = 'Банк вопросов обязателен, если включен.';
+$string['invalidquestionbankformat'] = 'Неверный формат банка вопросов: каждая задача должна содержать sqlcode и questiontext.';
+$string['invalidquestionbanksql'] = 'Неверный SQL в задаче банка вопросов';
 
 $string['additionalinfo'] = 'Дополнительная информация';
 $string['additionalinfo_help'] = 'Необязательное поле для дополнительной информации или пояснений о запросе.';

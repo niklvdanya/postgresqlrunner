@@ -11,9 +11,18 @@ $string['pluginnamesummary'] = 'A question type that allows students to write Po
 $string['sqlheader'] = 'SQL settings';
 $string['sqlcode'] = 'SQL Code';
 $string['sqlcode_help'] = 'Enter the sample SQL code that provides the correct answer to the question.';
+$string['sqlcodeorquestionbankrequired'] = 'Either SQL code or question bank must be provided.';
 $string['validatesql'] = 'Validate SQL';
 $string['validatesqlok'] = 'SQL looks good ✔️';
 $string['validatesqlfail'] = 'Error: {$a}';
+
+$string['usequestionbank'] = 'Use Question Bank';
+$string['usequestionbank_help'] = 'Enable to use a question bank with multiple task variants instead of a single SQL code.';
+$string['questionbank'] = 'Question Bank';
+$string['questionbank_help'] = 'Enter a JSON array of tasks, each containing sqlcode, questiontext, and optional parameters. Example: [{"sqlcode": "SELECT * FROM employees WHERE salary > {{salary}}", "questiontext": "Find employees with salary greater than {{salary}}", "parameters": {"salary": 50000}}]';
+$string['questionbankrequired'] = 'Question bank must be provided when enabled.';
+$string['invalidquestionbankformat'] = 'Invalid question bank format: each task must contain sqlcode and questiontext.';
+$string['invalidquestionbanksql'] = 'Invalid SQL in question bank task';
 
 $string['additionalinfo'] = 'Additional information';
 $string['additionalinfo_help'] = 'Optional field for additional information or explanation about the query.';

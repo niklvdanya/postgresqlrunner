@@ -8,6 +8,8 @@ require_once($CFG->dirroot . '/question/type/postgresqlrunner/classes/security/c
 
 class qtype_postgresqlrunner_question extends question_graded_automatically {
     public $sqlcode;
+    public $question_bank;
+    public $use_question_bank;
     public $expected_result;
     public $template;
     public $environment_init;
@@ -15,10 +17,57 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
     public $grading_type;
     public $case_sensitive;
     public $allow_ordering_difference;
+    public $selected_task;
     
     protected $conn;
     protected $temp_prefix;
     protected $student_query_error;
+
+    public function start_attempt(question_attempt_step $step, $variant) {
+        if ($this->use_question_bank && !empty($this->question_bank)) {
+            $question_bank = json_decode($this->question_bank, true);
+            if (!empty($question_bank)) {
+                $this->selected_task = $question_bank[array_rand($question_bank)];
+                $this->sqlcode = $this->get_processed_sqlcode($this->selected_task['sqlcode']);
+                $step->set_qt_var('_selected_task', json_encode($this->selected_task));
+            }
+        }
+    }
+
+    public function apply_attempt_state(question_attempt_step $step) {
+        $selected_task = $step->get_qt_var('_selected_task');
+        if ($selected_task) {
+            $this->selected_task = json_decode($selected_task, true);
+            $this->sqlcode = $this->get_processed_sqlcode($this->selected_task['sqlcode']);
+        }
+    }
+
+    public function get_question_text_with_placeholders() {
+        if ($this->use_question_bank && !empty($this->selected_task)) {
+            $text = isset($this->selected_task['questiontext']) ? $this->selected_task['questiontext'] : $this->questiontext;
+            if (isset($this->selected_task['parameters'])) {
+                foreach ($this->selected_task['parameters'] as $key => $value) {
+                    $text = str_replace("{{{$key}}}", $value, $text);
+                }
+            }
+            return $text;
+        }
+        return $this->questiontext;
+    }
+
+    protected function get_processed_sqlcode($raw_sqlcode) {
+        if ($this->use_question_bank && !empty($this->selected_task) && isset($this->selected_task['parameters'])) {
+            $sqlcode = $raw_sqlcode;
+            foreach ($this->selected_task['parameters'] as $key => $value) {
+                if (!is_numeric($value)) {
+                    $value = "'" . addslashes($value) . "'";
+                }
+                $sqlcode = str_replace("{{{$key}}}", $value, $sqlcode);
+            }
+            return $sqlcode;
+        }
+        return $raw_sqlcode;
+    }
 
     public function get_expected_data() {
         return array('answer' => PARAM_RAW);
@@ -99,7 +148,7 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
             \qtype_postgresqlrunner\security\sql_validator::validate_sql($answer);
             $this->setup_test_environment();
 
-            $student_query = $answer;
+            $student_query = trim(preg_replace('/;\s*$/', '', $answer));
             if (!empty($student_query)) {
                 $student_result = \qtype_postgresqlrunner\security\connection_manager::safe_execute_query($this->conn, $student_query);
                 if ($student_result) {
@@ -116,14 +165,15 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
             pg_free_result($result);
             $this->setup_test_environment();
             
-            if (!empty($this->sqlcode)) {
-                $model_result = \qtype_postgresqlrunner\security\connection_manager::safe_execute_query($this->conn, $this->sqlcode);
+            $processed_sqlcode = trim(preg_replace('/;\s*$/', '', $this->get_processed_sqlcode($this->sqlcode)));
+            if (!empty($processed_sqlcode)) {
+                $model_result = \qtype_postgresqlrunner\security\connection_manager::safe_execute_query($this->conn, $processed_sqlcode);
                 if ($model_result) {
                     pg_free_result($model_result);
                 }
             }
         
-            $model_select_result = $this->execute_select_query($this->extra_code ?: $this->sqlcode);
+            $model_select_result = $this->execute_select_query($this->extra_code ?: $processed_sqlcode);
             
             $this->cleanup_test_environment();
 
@@ -148,7 +198,7 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
             }
             $this->setup_test_environment();
             
-            $query_to_execute = $is_student ? $sql : $this->sqlcode;
+            $query_to_execute = $is_student ? trim(preg_replace('/;\s*$/', '', $sql)) : trim(preg_replace('/;\s*$/', '', $this->get_processed_sqlcode($this->sqlcode)));
             if (!empty($query_to_execute)) {
                 $main_result = \qtype_postgresqlrunner\security\connection_manager::safe_execute_query($this->conn, $query_to_execute);
                 if ($main_result) {
@@ -286,7 +336,7 @@ class qtype_postgresqlrunner_question extends question_graded_automatically {
             $sorted_actual = $this->sort_results($mapped_actual);
             $sorted_expected = $this->sort_results($expected['data']);
             
-            return $this->compare_data_sets($sorted_actual, $sorted_expected);
+            return $this->compare_data_sets($sorted_actual, $expected['data']);
         } else {
             return $this->compare_data_sets($mapped_actual, $expected['data']);
         }
